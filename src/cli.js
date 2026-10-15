@@ -4,7 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { env, loadConfig } from './config.js';
-import { getDb, insertLead, markSearch, panelLeads, searchDone, updateLead, STATUSES } from './db.js';
+import { getDb, insertLead, leadsToday, markSearch, panelLeads, searchDone, updateLead, STATUSES } from './db.js';
 import { startPanelServer } from './server.js';
 import { normalizePhone, formatPhone } from './phone.js';
 import { analyzeSite, scoreLead, socialHost } from './qualify.js';
@@ -27,8 +27,10 @@ Uso: node src/cli.js <comando> [opções]   (ou: npm run <comando> -- [opções]
   qualificar   Analisa site/telefone de cada lead novo e calcula o score
                  --todos                   reanalisa também os já qualificados
 
-  gerar        Faz tudo: busca todos os nichos nas cidades do config (Brasil todo), qualifica
-               e abre o painel em http://localhost:4000. Para continuar depois, rode de novo.
+  gerar        Faz tudo: busca no Brasil todo até ter os leads do dia (padrão: 50 celulares
+               qualificados), e só então abre o painel em http://localhost:4000.
+               Se a meta de hoje já foi batida, abre o painel direto.
+                 --meta 50                 leads por dia (0 = sem limite; padrão: busca.leadsPorDia)
                (aceita as opções do buscar; vários valores separados por ";")
 
   painel       Abre o painel de leads (http://localhost:4000) com botão "Abrir no WhatsApp".
@@ -79,6 +81,7 @@ const { positionals, values } = parseArgs({
     arquivo: { type: 'string' },
     canal: { type: 'string' },
     para: { type: 'string' },
+    meta: { type: 'string' },
     template: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
   },
@@ -113,7 +116,7 @@ function openFile(file) {
 const [cmd, ...args] = positionals;
 
 const commands = {
-  async buscar({ afterEach } = {}) {
+  async buscar({ afterEach, done = () => false } = {}) {
     const fonte = values.fonte || config.busca.fonte;
     if (fonte === 'places' && !env.placesKey) {
       console.log('Sem GOOGLE_PLACES_API_KEY no .env — usando --fonte maps (navegador).');
@@ -158,6 +161,7 @@ const commands = {
         totalNew += added;
         console.log(`${found.length} encontrados, ${added} novos${noPhone ? ` (${noPhone} sem telefone brasileiro)` : ''}`);
         if (added && afterEach) await afterEach();
+        if (done()) break;
       } catch (err) {
         if (err.name === 'MapsBlockedError') {
           // Google pediu captcha: espera e segue (essa busca é refeita numa próxima rodada)
@@ -255,20 +259,26 @@ const commands = {
     }
   },
 
-  // Busca e já qualifica a cada busca; o painel (http://localhost:4000) mostra os leads novos
-  // enquanto o resto ainda está sendo buscado.
+  // Busca e qualifica até bater a meta do dia; só então abre o painel (http://localhost:4000).
   async gerar() {
     values.todos = false;
-    await commands.painel({ wait: false });
-    const refresh = async () => {
-      const ok = await commands.qualificar({ quiet: true });
-      console.log(`   ↳ +${ok} qualificados · ${panelLeads().length} leads no painel`);
-    };
-    await commands.buscar({ afterEach: refresh });
-    if (process.exitCode) process.exit(process.exitCode);
-    await refresh();
-    console.log('\n✅ Busca concluída. O painel continua aberto — Ctrl+C para sair.');
-    await new Promise(() => {});
+    const meta = Number(values.meta ?? config.busca.leadsPorDia ?? 0);
+    const done = () => meta > 0 && leadsToday() >= meta;
+    if (done()) {
+      console.log(`✅ Meta de hoje já batida: ${leadsToday()} leads. Abrindo o painel (amanhã tem mais).`);
+    } else {
+      if (meta > 0) console.log(`🎯 Meta: ${meta} leads hoje (celulares qualificados). Já tenho ${leadsToday()}.`);
+      const refresh = async () => {
+        await commands.qualificar({ quiet: true });
+        console.log(`   ↳ ${meta > 0 ? `${leadsToday()}/${meta} leads de hoje` : `${leadsToday()} leads hoje`}`);
+      };
+      await commands.buscar({ afterEach: refresh, done });
+      if (process.exitCode) process.exit(process.exitCode);
+      await refresh();
+      console.log(done() ? `\n🎉 Meta batida: ${leadsToday()} leads de hoje!` : '\n✅ Busca concluída.');
+    }
+    console.log(`📋 ${panelLeads().length} leads esperando contato no painel.`);
+    await commands.painel();
   },
 
   /** Confere no WhatsApp Web (QR code) quais números têm WhatsApp, sem enviar nada. */

@@ -18,6 +18,7 @@
   },
 
   "busca": {
+    "leadsPorDia": 50,
     "fonte": "places",
     "maxPorBusca": 60,
     "maxPorBuscaNavegador": 20,

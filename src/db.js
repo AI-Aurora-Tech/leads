@@ -188,6 +188,16 @@ export function panelLeads({ all = false } = {}) {
     .all();
 }
 
+/** Leads de hoje prontos para contato (qualificados, celular, sem "não tem WhatsApp"). Conta os já contatados. */
+export function leadsToday() {
+  return getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM leads WHERE phone_type = 'celular' AND (wa_check IS NULL OR wa_check = 1)
+         AND status IN ('qualificado', 'contatado') AND date(created_at, 'localtime') = date('now', 'localtime')`,
+    )
+    .get().n;
+}
+
 export function setContacted(id, contacted) {
   const lead = getDb().prepare('SELECT status FROM leads WHERE id = ?').get(id);
   if (!lead || !['qualificado', 'contatado'].includes(lead.status)) return false;
