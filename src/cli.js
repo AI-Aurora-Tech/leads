@@ -6,6 +6,7 @@ import { getDb, insertLead, markSearch, searchDone, updateLead, STATUSES } from 
 import { normalizePhone, formatPhone } from './phone.js';
 import { analyzeSite, scoreLead, socialHost } from './qualify.js';
 import { buildMessage, buildMessageAI } from './message.js';
+import { leadToCard, manualMessage, renderPanel, waLink } from './panel.js';
 
 const HELP = `
 AuroraTech Leads — prospecção automática + WhatsApp
@@ -21,6 +22,11 @@ Uso: node src/cli.js <comando> [opções]   (ou: npm run <comando> -- [opções]
 
   qualificar   Analisa site/telefone de cada lead novo e calcula o score
                  --todos                   reanalisa também os já qualificados
+
+  gerar        Faz tudo de uma vez: buscar + qualificar + painel  (aceita as opções do buscar)
+
+  painel       Gera data/leads.html: lista de leads com botão "Abrir no WhatsApp" e mensagem pronta
+                 --arquivo data/leads.html  --todos (inclui já enviados/descartados)
 
   leads        Lista leads    --status qualificado  --top 30
 
@@ -165,6 +171,25 @@ const commands = {
     }
   },
 
+  painel() {
+    const file = values.arquivo || 'data/leads.html';
+    const rows = getDb()
+      .prepare(
+        `SELECT * FROM leads WHERE phone IS NOT NULL ${values.todos ? "AND status != 'optout'" : "AND status = 'qualificado'"}
+         ORDER BY score DESC, reviews DESC`,
+      )
+      .all();
+    writeFileSync(file, renderPanel(rows.map((l) => leadToCard(l, config))));
+    console.log(`✅ ${rows.length} leads no painel: ${file}\n   Abra no navegador (no celular, o botão abre direto o app do WhatsApp).`);
+  },
+
+  async gerar() {
+    await commands.buscar();
+    values.todos = false;
+    await commands.qualificar();
+    commands.painel();
+  },
+
   async enviar() {
     const { runSender } = await import('./sender.js');
     await runSender(config, {
@@ -192,8 +217,9 @@ const commands = {
     const rows = getDb()
       .prepare(`SELECT * FROM leads ${values.status ? 'WHERE status = ?' : ''} ORDER BY score DESC NULLS LAST`)
       .all(...(values.status ? [values.status] : []));
-    const cols = ['id', 'status', 'score', 'name', 'phone', 'phone_type', 'category', 'city', 'address', 'website', 'rating', 'reviews', 'maps_url', 'sent_at', 'replied_at', 'reply_text', 'notes'];
+    const cols = ['id', 'status', 'score', 'name', 'whatsapp', 'phone', 'phone_type', 'category', 'city', 'address', 'website', 'rating', 'reviews', 'maps_url', 'sent_at', 'replied_at', 'reply_text', 'notes'];
     const esc = (v) => (v == null ? '' : `"${String(v).replace(/"/g, '""')}"`);
+    for (const r of rows) if (r.phone) r.whatsapp = waLink(r.phone, r.reasons ? manualMessage(r, config) : '');
     const csv = [cols.join(';'), ...rows.map((r) => cols.map((c) => esc(r[c])).join(';'))].join('\n');
     writeFileSync(file, `﻿${csv}`);
     console.log(`✅ ${rows.length} leads exportados para ${file}`);

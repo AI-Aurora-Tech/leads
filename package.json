@@ -13,6 +13,8 @@
   "scripts": {
     "buscar": "node --disable-warning=ExperimentalWarning src/cli.js buscar",
     "qualificar": "node --disable-warning=ExperimentalWarning src/cli.js qualificar",
+    "gerar": "node --disable-warning=ExperimentalWarning src/cli.js gerar",
+    "painel": "node --disable-warning=ExperimentalWarning src/cli.js painel",
     "leads": "node --disable-warning=ExperimentalWarning src/cli.js leads",
     "preview": "node --disable-warning=ExperimentalWarning src/cli.js preview",
     "enviar": "node --disable-warning=ExperimentalWarning src/cli.js enviar",
