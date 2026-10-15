@@ -13,11 +13,17 @@ Sistema de prospecção automática para a [AuroraTech](https://www.auroratech.a
 
 Se você prefere mandar as mensagens você mesmo (sem automação e sem risco para o número):
 
+> 🍎 **No Mac?** Siga o **[TUTORIAL-MAC.md](TUTORIAL-MAC.md)**: passo a passo do zero, sem precisar saber programar.
+
 ```bash
-npm run gerar -- --termo "clínica odontológica" --cidade "Campinas, SP"
+bash "Gerar Leads.command"                         # pergunta cidade e nicho e faz tudo
+# ou direto:
+npm run gerar -- --cidade "Campinas, SP"           # TODOS os nichos (113) da cidade
+npm run gerar -- --cidade "Campinas, SP" --termo "padaria;barbearia"   # só alguns nichos
 ```
 
-Isso busca as empresas, analisa os sites e gera **`data/leads.html`**. Abra esse arquivo no navegador.
+Isso busca as empresas nicho por nicho, analisa os sites e gera **`data/leads.html`**, que abre sozinho no navegador
+e é atualizado a cada nicho buscado.
 Cada empresa vem com nota (score), motivo do contato, telefone, links do site e do Google Maps,
 e uma **mensagem pronta e editável**. O botão **💬 Abrir no WhatsApp** abre o app (ou o WhatsApp Web)
 na conversa com a mensagem já escrita: é só apertar enviar. O lead fica marcado como "contatado" no painel.
