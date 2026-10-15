@@ -30,4 +30,8 @@ export const env = {
   placesKey: process.env.GOOGLE_PLACES_API_KEY || '',
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   ownerWhatsapp: (process.env.OWNER_WHATSAPP || '').replace(/\D/g, ''),
+  waToken: process.env.WHATSAPP_TOKEN || '',
+  waPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+  waVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '',
+  waAppSecret: process.env.WHATSAPP_APP_SECRET || '',
 };

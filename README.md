@@ -5,7 +5,7 @@ Sistema de prospecção automática para a [AuroraTech](https://www.auroratech.a
 1. **Busca** empresas no Google (Places API ou Google Maps pelo navegador) por nicho + cidade
 2. **Qualifica** cada uma: sem site, site que é só Instagram/Facebook, site fora do ar, sem HTTPS, não responsivo, lento, desatualizado, sem atendimento no WhatsApp…
 3. **Gera a mensagem** personalizada com o motivo do contato (templates com variação de texto, ou IA com Claude)
-4. **Envia pelo WhatsApp Web** com limites e pausas que imitam uma pessoa
+4. **Envia pelo WhatsApp** — via WhatsApp Web (com limites e pausas que imitam uma pessoa) ou via **API oficial da Meta** (templates aprovados)
 5. **Monitora respostas**: quem responde vira `respondeu` e você recebe um alerta no seu WhatsApp pessoal; quem pede para sair nunca mais recebe mensagem
 6. **Follow-up** automático (1 vez) para quem não respondeu em 3 dias
 
@@ -81,6 +81,58 @@ O WhatsApp não tem API oficial para mensagens frias pelo WhatsApp Web. Automaç
 - O rodapé "responda SAIR" é respeitado automaticamente: o contato vai para `optout` e nunca mais recebe nada. Também ajuda com a **LGPD** (contato B2B com dados públicos da empresa, base de legítimo interesse, com opção de saída).
 
 Para volume alto e sem risco de banimento, o caminho oficial é a WhatsApp Business Cloud API com templates aprovados pela Meta (pago por conversa).
+
+## API oficial do WhatsApp (Meta Cloud API) — `--canal cloud`
+
+Alternativa ao WhatsApp Web: envia pela API oficial da Meta, sem navegador e sem QR code.
+
+**Regras da Meta que mudam tudo:**
+- A **primeira mensagem tem que ser um template aprovado** (categoria *Marketing*). Texto livre só depois que o lead responder (janela de 24h).
+- A política da Meta exige **opt-in** (o contato ter autorizado receber mensagens). Prospecção fria fere essa política: se muitos bloquearem/denunciarem, a **qualidade do número cai** e a Meta reduz seus limites ou restringe o número. Use volume baixo, mensagem relevante e botão de sair.
+- **Paga por mensagem de marketing entregue** (no Brasil, cerca de US$ 0,06 cada; confira a tabela atual da Meta).
+- Número novo começa limitado a **250 contatos novos por 24h**; sobe com verificação da empresa + boa qualidade.
+
+### Passo a passo
+
+1. **developers.facebook.com → seu app → WhatsApp → Configuração da API**
+   - Copie o **Identificação do número de telefone** (Phone number ID) → `WHATSAPP_PHONE_NUMBER_ID` no `.env`.
+   - No começo você tem um número de teste que só envia para até 5 números cadastrados. Para prospectar de verdade, clique em **Adicionar número de telefone** e use um **chip que não esteja no app WhatsApp** (ou apague a conta dele no app antes).
+2. **Token permanente** (o token da tela de configuração expira em 24h):
+   [business.facebook.com](https://business.facebook.com) → Configurações do negócio → **Usuários do sistema** → Adicionar (Admin) → **Atribuir ativos** (seu app + sua conta do WhatsApp) → **Gerar token** com as permissões `whatsapp_business_messaging` e `whatsapp_business_management` → `WHATSAPP_TOKEN`.
+3. **Pagamento**: WhatsApp Manager → Configurações → adicione um cartão. Sem isso, os templates de marketing não são entregues.
+4. **Teste** (isso também conclui a etapa "Testar casos de uso" do painel da Meta):
+   ```bash
+   node src/cli.js cloud-teste --para 5519999999999   # seu celular; envia o template hello_world
+   ```
+5. **Crie o template** em WhatsApp Manager → Modelos de mensagem → Criar modelo:
+   - Categoria **Marketing**, nome **`aurora_prospeccao`**, idioma **Português (BR)**
+   - Corpo (sugestão; variável não pode ficar no começo nem no fim do texto):
+     ```
+     Olá! Aqui é o Seu Nome, da AuroraTech. Encontrei a {{1}} no Google e notei que {{2}}. Criamos sites modernos e automatizamos o atendimento no WhatsApp com IA. Posso te mostrar alguns exemplos?
+     ```
+     Exemplos para a análise: `{{1}}` = `Clínica Sorriso`, `{{2}}` = `vocês ainda não têm um site próprio`
+   - Botões de resposta rápida: **"Quero ver exemplos"** e **"Parar promoções"** (o sistema trata o segundo como opt-out)
+   - A aprovação costuma levar de minutos a algumas horas.
+   - Opcional: um template de follow-up com `{{1}}` = nome → configure em `cloud.templateFollowup.nome`.
+6. **Webhook (para receber as respostas)**: o sistema abre um servidor local na porta 3000. Exponha para a internet:
+   ```bash
+   npx cloudflared tunnel --url http://localhost:3000     # ou: ngrok http 3000
+   ```
+   No app da Meta → WhatsApp → Configuração → Webhook: URL de callback = `https://SEU-TUNEL/webhook`,
+   token de verificação = o mesmo `WHATSAPP_VERIFY_TOKEN` do `.env`. Depois, assine o campo **messages**.
+   Coloque também `WHATSAPP_APP_SECRET` (Configurações do app → Básico → Chave secreta) para validar as chamadas.
+   O sistema precisa estar rodando (`enviar`) quando você clicar em "Verificar e salvar".
+7. **Envie**:
+   ```bash
+   node src/cli.js preview --canal cloud     # confere as variáveis de cada lead
+   node src/cli.js enviar --canal cloud      # ou "canal": "cloud" no config.json
+   ```
+
+O que o sistema faz sozinho no canal cloud: envia o template com o nome e o motivo de cada lead. Também marca
+`sem_whatsapp` (erro 131026) e `optout` (131050 ou "Parar promoções"), e avisa você quando alguém responde.
+Se o token, a conta ou o template estiver com problema, ele para tudo para não queimar a fila.
+O aviso de "lead respondeu" no seu WhatsApp pessoal (`OWNER_WHATSAPP`) só chega se você tiver mandado
+alguma mensagem para o número da empresa nas últimas 24h (regra da janela). Ele também aparece no terminal.
 
 ## Personalização com IA (opcional)
 

@@ -26,10 +26,15 @@ Uso: node src/cli.js <comando> [opções]   (ou: npm run <comando> -- [opções]
 
   preview      Mostra as mensagens que seriam enviadas  --n 5  --ia
 
-  enviar       Conecta no WhatsApp Web e envia para a fila, respeitando limites e horário.
+  enviar       Envia para a fila, respeitando limites e horário.
                Fica rodando e monitorando respostas (Ctrl+C para parar).
+                 --canal web|cloud         web = WhatsApp Web (QR code) | cloud = API oficial da Meta
                  --limite 25               limite diário (sobrescreve config)
-                 --visivel                 mostra o navegador
+                 --visivel                 mostra o navegador (canal web)
+
+  cloud-teste  Testa a API oficial: mostra dados do número e, com --para, envia o template
+                 --para 5519999999999      número de teste
+                 --template hello_world    template a enviar (padrão: hello_world, idioma en_US)
 
   exportar     Gera CSV  --arquivo leads.csv  --status respondeu
 
@@ -54,6 +59,9 @@ const { positionals, values } = parseArgs({
     limite: { type: 'string' },
     visivel: { type: 'boolean' },
     arquivo: { type: 'string' },
+    canal: { type: 'string' },
+    para: { type: 'string' },
+    template: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
   },
 });
@@ -143,7 +151,15 @@ const commands = {
     const n = Number(values.n || 5);
     const rows = getDb().prepare("SELECT * FROM leads WHERE status = 'qualificado' ORDER BY score DESC LIMIT ?").all(n);
     if (!rows.length) console.log('Nenhum lead qualificado. Rode buscar + qualificar.');
+    const canal = values.canal || config.canal;
+    const { templateFor } = canal === 'cloud' ? await import('./cloud.js') : {};
     for (const l of rows) {
+      if (canal === 'cloud') {
+        const tpl = templateFor(l, config.cloud);
+        console.log(`\n━━━ #${l.id} ${l.name} · ${formatPhone(l.phone)} · score ${l.score}`);
+        console.log(tpl ? `template ${tpl.name} (${tpl.language})\n${tpl.bodyParams.map((p, i) => `  {{${i + 1}}} = ${p}`).join('\n')}` : 'sem template configurado');
+        continue;
+      }
       const text = values.ia ? await buildMessageAI(l, config) : buildMessage(l, config);
       console.log(`\n━━━ #${l.id} ${l.name} · ${formatPhone(l.phone)} · score ${l.score}\n${text}`);
     }
@@ -151,7 +167,24 @@ const commands = {
 
   async enviar() {
     const { runSender } = await import('./sender.js');
-    await runSender(config, { limit: values.limite ? Number(values.limite) : undefined, visible: values.visivel });
+    await runSender(config, {
+      limit: values.limite ? Number(values.limite) : undefined,
+      visible: values.visivel,
+      canal: values.canal,
+    });
+  },
+
+  async 'cloud-teste'() {
+    const { cloudClient } = await import('./cloud.js');
+    const api = cloudClient({ token: env.waToken, phoneNumberId: env.waPhoneNumberId, version: config.cloud.versaoGraph });
+    const info = await api.phoneInfo();
+    console.log('Número conectado:', info);
+    if (values.para) {
+      const to = values.para.replace(/\D/g, '');
+      const name = values.template || 'hello_world';
+      const res = await api.sendTemplate(to, { name, language: name === 'hello_world' ? 'en_US' : 'pt_BR' });
+      console.log(`✅ Template "${name}" enviado para ${to}:`, res);
+    }
   },
 
   exportar() {
@@ -187,5 +220,10 @@ const commands = {
 if (!cmd || values.help || !commands[cmd]) {
   console.log(HELP);
 } else {
-  await commands[cmd]();
+  try {
+    await commands[cmd]();
+  } catch (err) {
+    console.error(`Erro: ${err.message}`);
+    process.exitCode = 1;
+  }
 }

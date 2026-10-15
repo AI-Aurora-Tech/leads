@@ -67,7 +67,17 @@ export function getDb(file = join(ROOT, 'data', 'leads.db')) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  // Migrações de colunas adicionadas depois da 1ª versão
+  const cols = new Set(db.prepare('PRAGMA table_info(leads)').all().map((c) => c.name));
+  if (!cols.has('wa_id')) db.exec('ALTER TABLE leads ADD COLUMN wa_id TEXT');
+  if (!cols.has('wa_msg_id')) db.exec('ALTER TABLE leads ADD COLUMN wa_msg_id TEXT');
+  if (!cols.has('channel')) db.exec('ALTER TABLE leads ADD COLUMN channel TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_leads_wa_msg ON leads(wa_msg_id)');
   return db;
+}
+
+export function findLeadByMsgId(msgId) {
+  return getDb().prepare('SELECT * FROM leads WHERE wa_msg_id = ?').get(msgId);
 }
 
 /** Insere um lead se o place_id e o telefone ainda não existem. Retorna true se inseriu. */

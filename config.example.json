@@ -5,6 +5,18 @@
     "site": "https://www.auroratech.app.br"
   },
 
+  "canal": "web",
+
+  "cloud": {
+    "versaoGraph": "v23.0",
+    "portaWebhook": 3000,
+    "delayMinSeg": 20,
+    "delayMaxSeg": 60,
+    "template": { "nome": "aurora_prospeccao", "idioma": "pt_BR", "variaveis": ["nome", "motivo"] },
+    "templates": {},
+    "templateFollowup": { "nome": "", "idioma": "pt_BR", "variaveis": ["nome"] }
+  },
+
   "busca": {
     "fonte": "places",
     "maxPorBusca": 60,
