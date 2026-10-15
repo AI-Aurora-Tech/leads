@@ -105,7 +105,8 @@ const commands = {
         : (await import('./discover/maps.js')).searchMaps;
     // Vários valores separados por ";" — ex.: --termo "padaria;barbearia" --cidade "Campinas, SP;Sumaré, SP"
     const list = (v) => v.split(';').map((x) => x.trim()).filter(Boolean);
-    const termos = values.termo ? list(values.termo) : config.busca.nichos;
+    const todos = (v) => !v || /^(todos|todas|tudo|all|\*)$/i.test(v.trim());
+    const termos = todos(values.termo) ? config.busca.nichos : list(values.termo);
     const cidades = values.cidade ? list(values.cidade) : config.busca.cidades;
     const max = Number(values.max || (source === 'maps' ? config.busca.maxPorBuscaNavegador : config.busca.maxPorBusca));
     console.log(`${termos.length} nicho(s) × ${cidades.length} cidade(s), até ${max} empresas por busca (fonte: ${source}).`);
@@ -122,16 +123,22 @@ const commands = {
         try {
           const found = await search({ query, apiKey: env.placesKey, max });
           let added = 0;
+          let noPhone = 0;
           for (const p of found) {
             const phone = normalizePhone(p.rawPhone);
+            if (!phone) noPhone++;
             if (insertLead({ ...p, phone: phone?.e164, phoneType: phone?.type, city: cidade, query })) added++;
           }
           if (found.length) markSearch(query, source, found.length); // vazio = tenta de novo na próxima vez
           totalNew += added;
-          console.log(`${found.length} encontrados, ${added} novos`);
+          console.log(`${found.length} encontrados, ${added} novos${noPhone ? ` (${noPhone} sem telefone brasileiro)` : ''}`);
           if (added && afterEach) await afterEach();
         } catch (err) {
           console.log(`erro: ${err.message}`);
+          if (err.name === 'BrowserMissingError') {
+            process.exitCode = 1;
+            return; // sem navegador nenhuma busca funciona — não adianta tentar as outras
+          }
         }
       }
     }
@@ -221,6 +228,7 @@ const commands = {
       }
     };
     await commands.buscar({ afterEach: refresh });
+    if (process.exitCode) return;
     await refresh();
     const { file } = commands.painel();
     if (!opened) openFile(file);
