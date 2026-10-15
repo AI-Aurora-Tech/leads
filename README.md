@@ -9,6 +9,22 @@ Sistema de prospecção automática para a [AuroraTech](https://www.auroratech.a
 5. **Monitora respostas**: quem responde vira `respondeu` e você recebe um alerta no seu WhatsApp pessoal; quem pede para sair nunca mais recebe mensagem
 6. **Follow-up** automático (1 vez) para quem não respondeu em 3 dias
 
+## Jeito mais simples: só os leads + botão do WhatsApp
+
+Se você prefere mandar as mensagens você mesmo (sem automação e sem risco para o número):
+
+```bash
+npm run gerar -- --termo "clínica odontológica" --cidade "Campinas, SP"
+```
+
+Isso busca as empresas, analisa os sites e gera **`data/leads.html`**. Abra esse arquivo no navegador.
+Cada empresa vem com nota (score), motivo do contato, telefone, links do site e do Google Maps,
+e uma **mensagem pronta e editável**. O botão **💬 Abrir no WhatsApp** abre o app (ou o WhatsApp Web)
+na conversa com a mensagem já escrita: é só apertar enviar. O lead fica marcado como "contatado" no painel.
+
+Sem `--termo`/`--cidade`, ele roda todos os nichos e cidades do `config.json`. Para regerar só a página: `npm run painel`.
+O CSV (`node src/cli.js exportar`) também traz uma coluna `whatsapp` com o mesmo link.
+
 ## Instalação (no seu computador)
 
 Requer **Node.js 22.13+**.
