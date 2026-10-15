@@ -137,9 +137,12 @@ if (SERVER) {
   setInterval(async () => {
     try {
       const r = await (await fetch('api/total')).json();
-      if (r.total !== LEADS.length) document.getElementById('novos').hidden = false;
+      if (r.total !== LEADS.length) {
+        if (!LEADS.length) location.reload(); // primeiros leads: mostra direto
+        else document.getElementById('novos').hidden = false;
+      }
     } catch {}
-  }, 20000);
+  }, LEADS.length ? 20000 : 8000);
 }
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -190,7 +193,7 @@ function render() {
         <button class="btn" data-act="copy">Copiar mensagem</button>
         <label><input type="checkbox" data-act="done" \${done[l.id] ? 'checked' : ''}> Contatado</label>
       </div>
-    </article>\`).join('') : '<p class="empty">Nenhum lead com esses filtros.</p>';
+    </article>\`).join('') : (LEADS.length ? '<p class="empty">Nenhum lead com esses filtros.</p>' : '<p class="empty">⏳ O robô está buscando os primeiros leads.<br>Esta página avisa quando eles chegarem — pode deixar aberta.</p>');
 }
 
 $('list').addEventListener('click', async (e) => {

@@ -21,6 +21,7 @@ Uso: node src/cli.js <comando> [opções]   (ou: npm run <comando> -- [opções]
                  --cidade "Campinas, SP"   cidade(s) (padrão: as cidades do config)
                  --fonte places|maps       places = API oficial (precisa de chave) | maps = navegador, sem chave
                  --max 60                  máximo de resultados por busca
+                 --visivel                 mostra o navegador trabalhando (fonte maps)
                  --refazer                 repete buscas já feitas
 
   qualificar   Analisa site/telefone de cada lead novo e calcula o score
@@ -118,10 +119,8 @@ const commands = {
       console.log('Sem GOOGLE_PLACES_API_KEY no .env — usando --fonte maps (navegador).');
     }
     const source = fonte === 'places' && env.placesKey ? 'places' : 'maps';
-    const search =
-      source === 'places'
-        ? (await import('./discover/places.js')).searchPlaces
-        : (await import('./discover/maps.js')).searchMaps;
+    const maps = source === 'maps' ? await import('./discover/maps.js') : null;
+    const search = maps ? maps.searchMaps : (await import('./discover/places.js')).searchPlaces;
     // Vários valores separados por ";" — ex.: --termo "padaria;barbearia" --cidade "Campinas, SP;Sumaré, SP"
     const list = (v) => v.split(';').map((x) => x.trim()).filter(Boolean);
     const todos = (v) => !v || /^(todos|todas|tudo|all|\*)$/i.test(v.trim());
@@ -138,9 +137,16 @@ const commands = {
     let totalNew = 0;
     for (const [i, { cidade, termo }] of pending.entries()) {
       const query = `${termo} em ${cidade}`;
-      process.stdout.write(`[${i + 1}/${pending.length}] 🔎 ${query} ... `);
+      process.stdout.write(`[${i + 1}/${pending.length}] 🔎 ${query} `);
       try {
-        const found = await search({ query, apiKey: env.placesKey, max });
+        const found = await search({
+          query,
+          apiKey: env.placesKey,
+          max,
+          headless: !values.visivel,
+          onProgress: () => process.stdout.write('.'),
+        });
+        process.stdout.write(' ');
         let added = 0;
         let noPhone = 0;
         for (const p of found) {
@@ -153,6 +159,12 @@ const commands = {
         console.log(`${found.length} encontrados, ${added} novos${noPhone ? ` (${noPhone} sem telefone brasileiro)` : ''}`);
         if (added && afterEach) await afterEach();
       } catch (err) {
+        if (err.name === 'MapsBlockedError') {
+          // Google pediu captcha: espera e segue (essa busca é refeita numa próxima rodada)
+          console.log(`\n⏸️  ${err.message} Esperando 15 minutos antes de continuar...`);
+          await new Promise((r) => setTimeout(r, 15 * 60_000));
+          continue;
+        }
         if (err.name === 'BrowserMissingError') {
           console.log(`\n\n❌ ${err.message}`);
           process.exitCode = 1;
@@ -161,6 +173,7 @@ const commands = {
         console.log(`erro: ${err.message.split('\n')[0].slice(0, 160)}`);
       }
     }
+    await maps?.closeMapsBrowser();
     console.log(`\n✅ ${totalNew} leads novos.${afterEach ? '' : ' Próximo passo: npm run qualificar'}`);
   },
 
