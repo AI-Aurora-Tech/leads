@@ -11,6 +11,7 @@ export const STATUSES = [
   'enviado', // 1ª mensagem enviada
   'followup', // follow-up enviado
   'respondeu', // lead respondeu — trabalhar manualmente!
+  'contatado', // você mandou mensagem manualmente pelo painel
   'optout', // pediu para não receber mais
   'erro',
 ];
@@ -72,6 +73,8 @@ export function getDb(file = join(ROOT, 'data', 'leads.db')) {
   if (!cols.has('wa_id')) db.exec('ALTER TABLE leads ADD COLUMN wa_id TEXT');
   if (!cols.has('wa_msg_id')) db.exec('ALTER TABLE leads ADD COLUMN wa_msg_id TEXT');
   if (!cols.has('channel')) db.exec('ALTER TABLE leads ADD COLUMN channel TEXT');
+  // 1 = número tem WhatsApp, 0 = não tem, NULL = não verificado
+  if (!cols.has('wa_check')) db.exec('ALTER TABLE leads ADD COLUMN wa_check INTEGER');
   db.exec('CREATE INDEX IF NOT EXISTS idx_leads_wa_msg ON leads(wa_msg_id)');
   return db;
 }
@@ -172,4 +175,22 @@ export function sentToday(timeZone) {
     if (r.followup_at && fmt.format(new Date(r.followup_at)) === today) n++;
   }
   return n;
+}
+
+/** Leads que aparecem no painel: qualificados ou já contatados, nunca os que sabidamente não têm WhatsApp. */
+export function panelLeads({ all = false } = {}) {
+  return getDb()
+    .prepare(
+      `SELECT * FROM leads WHERE phone IS NOT NULL AND (wa_check IS NULL OR wa_check = 1)
+         ${all ? "AND status NOT IN ('optout', 'sem_whatsapp')" : "AND status IN ('qualificado', 'contatado')"}
+       ORDER BY (status = 'contatado'), score DESC, reviews DESC`,
+    )
+    .all();
+}
+
+export function setContacted(id, contacted) {
+  const lead = getDb().prepare('SELECT status FROM leads WHERE id = ?').get(id);
+  if (!lead || !['qualificado', 'contatado'].includes(lead.status)) return false;
+  updateLead(id, contacted ? { status: 'contatado', sent_at: new Date().toISOString(), channel: 'manual' } : { status: 'qualificado', sent_at: null });
+  return true;
 }
