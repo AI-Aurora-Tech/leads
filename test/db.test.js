@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getDb, insertLead, panelLeads, setContacted, updateLead } from '../src/db.js';
+import { getDb, insertLead, leadsToday, panelLeads, setContacted, updateLead } from '../src/db.js';
 import { applyCheck } from '../src/verify.js';
 
 getDb(':memory:');
@@ -39,4 +39,16 @@ test('verificação de WhatsApp: sem WhatsApp sai do painel, com WhatsApp ganha 
   assert.ok(ids.includes(a.id));
   assert.ok(!ids.includes(b.id));
   assert.equal(getDb().prepare('SELECT status, wa_check FROM leads WHERE id = ?').get(b.id).status, 'sem_whatsapp');
+});
+
+test('meta do dia conta só celulares qualificados de hoje', () => {
+  const before = leadsToday();
+  insertLead({ ...base, placeId: 'd1', phone: '5581999990011' });
+  insertLead({ ...base, placeId: 'd2', phone: '558133330012', phoneType: 'fixo' });
+  insertLead({ ...base, placeId: 'd3', phone: '5581999990013' });
+  const id = (p) => getDb().prepare('SELECT id FROM leads WHERE place_id = ?').get(p).id;
+  updateLead(id('d1'), { status: 'qualificado' });
+  updateLead(id('d2'), { status: 'qualificado' }); // fixo não conta
+  updateLead(id('d3'), { status: 'qualificado', created_at: '2020-01-01 12:00:00' }); // de outro dia não conta
+  assert.equal(leadsToday(), before + 1);
 });

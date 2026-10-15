@@ -38,20 +38,23 @@ a mensagem padrão da Aurora Tech escrita. Você só aperta enviar.
    ```
 
 Pronto, ele não pergunta nada. Ele instala o que precisa (na primeira vez), confere o navegador e começa a buscar.
-O **painel abre sozinho no navegador** (endereço `http://localhost:4000`). Quando chegam leads novos,
-aparece um botão **🔄 Há leads novos**: é só clicar.
+Para cada empresa encontrada aparece um ponto `.` e, depois de cada busca, a contagem do dia (ex.: `12/50 leads de hoje`).
 
-> ⏱️ São mais de 12 mil buscas (113 nichos × 108 cidades), em ordem misturada para vir lead de todo lugar desde o começo.
-> Sem chave do Google cada busca leva cerca de 1 minuto. Então deixe rodando quanto quiser e vá contatando
-> enquanto isso. Com a chave do Google (passo 6) fica bem mais rápido.
+**Quando ele chega a 50 leads novos no dia** (celulares, já analisados), para de buscar e **só então abre o painel**
+no navegador (endereço `http://localhost:4000`), com o botão para chamar cada um no WhatsApp.
+
+> ⏱️ Sem chave do Google, juntar os 50 leads leva de 30 minutos a 1 hora (com a chave do passo 7 é bem mais rápido).
+> Se rodar de novo no mesmo dia, ele vê que a meta já foi batida e abre o painel direto. No dia seguinte busca mais 50,
+> continuando de onde parou, sem repetir empresa.
 >
-> **Para parar:** `Ctrl + C`. **Para continuar outro dia:** rode o mesmo comando, e ele pula o que já buscou.
-> Deixe a janela do Terminal aberta enquanto usa o painel.
+> Quer outra quantidade? `bash "Gerar Leads.command" --meta 80` (ou `--meta 0` para buscar sem parar).
+> **Para parar antes:** `Ctrl + C`. Deixe a janela do Terminal aberta enquanto usa o painel.
 
 Avisos amarelos do `npm` (`deprecated`, `vulnerabilities`, `install-scripts blocked`) são normais.
 
 ## 4. Use o painel
 
+Leads de dias anteriores que você ainda não contatou continuam lá.
 Cada empresa aparece com pontuação, motivo (sem site, só Instagram, site com problemas…), telefone, avaliação,
 links do site e do Google Maps, e a **mensagem padrão** pronta (dá para editar antes de enviar).
 
