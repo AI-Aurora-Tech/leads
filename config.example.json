@@ -1,0 +1,89 @@
+{
+  "remetente": {
+    "nome": "Seu Nome",
+    "empresa": "AuroraTech",
+    "site": "https://www.auroratech.app.br"
+  },
+
+  "busca": {
+    "fonte": "places",
+    "maxPorBusca": 60,
+    "nichos": [
+      "clínica odontológica",
+      "clínica de estética",
+      "escritório de advocacia",
+      "escritório de contabilidade",
+      "imobiliária",
+      "academia",
+      "pet shop",
+      "clínica veterinária",
+      "oficina mecânica",
+      "auto escola",
+      "escola de idiomas",
+      "salão de beleza",
+      "barbearia",
+      "restaurante",
+      "loja de móveis planejados",
+      "marmoraria",
+      "vidraçaria",
+      "serralheria",
+      "empresa de energia solar",
+      "clínica de fisioterapia",
+      "psicólogo",
+      "nutricionista",
+      "dedetizadora",
+      "empresa de limpeza",
+      "buffet de festas",
+      "gráfica",
+      "ótica",
+      "material de construção"
+    ],
+    "cidades": [
+      "Campinas, SP",
+      "São Paulo, SP"
+    ]
+  },
+
+  "qualificacao": {
+    "scoreMinimo": 30,
+    "timeoutSiteMs": 10000
+  },
+
+  "envio": {
+    "limiteDiario": 25,
+    "delayMinSeg": 90,
+    "delayMaxSeg": 240,
+    "pausaLongaACada": 8,
+    "pausaLongaMinSeg": 600,
+    "pausaLongaMaxSeg": 1200,
+    "horarioInicio": 9,
+    "horarioFim": 18,
+    "diasSemana": [1, 2, 3, 4, 5],
+    "fusoHorario": "America/Sao_Paulo",
+    "apenasCelular": false,
+    "followupAposDias": 3,
+    "usarIA": false
+  },
+
+  "optoutPalavras": ["sair", "parar", "pare", "remover", "descadastrar", "não tenho interesse", "nao tenho interesse", "não quero", "nao quero", "stop"],
+
+  "templates": {
+    "sem_site": [
+      "{Oi|Olá}, {saudacao}! Tudo bem? Aqui é {remetente}, da {empresa}. {Encontrei|Vi} a *{nome}* no Google Maps e {percebi|notei} que vocês ainda não têm um site próprio. Hoje a maioria dos clientes pesquisa no Google antes de {ligar|ir até a empresa}, e um site {profissional|bem feito} ajuda muito a {ser encontrado|aparecer} e passar confiança. A gente cria sites {rápidos|modernos} e também automatiza o atendimento no WhatsApp com IA. {Posso te mostrar alguns exemplos?|Faz sentido eu te mostrar um exemplo?}"
+    ],
+    "site_social": [
+      "{Oi|Olá}, {saudacao}! Tudo bem? Aqui é {remetente}, da {empresa}. {Encontrei|Vi} a *{nome}* no Google Maps e {percebi|notei} que o link de site de vocês leva para {redeSocial}. Isso ajuda, mas um site próprio aparece melhor no Google e passa {mais credibilidade|muito mais confiança} para quem ainda não conhece vocês. A gente cria sites {rápidos|modernos} e integra atendimento com IA no WhatsApp. {Posso te mostrar alguns exemplos?|Faz sentido eu te mostrar um exemplo?}"
+    ],
+    "site_problemas": [
+      "{Oi|Olá}, {saudacao}! Tudo bem? Aqui é {remetente}, da {empresa}. {Dei uma olhada|Dei uma olhada rápida} no site da *{nome}* e {notei|reparei} alguns pontos que podem estar fazendo vocês perderem clientes: {problemas}. A gente {moderniza|refaz} sites e também coloca atendimento automático com IA no WhatsApp. {Quer que eu te mande um diagnóstico rápido, sem compromisso?|Posso te mandar um diagnóstico rápido, sem custo?}"
+    ],
+    "site_ok": [
+      "{Oi|Olá}, {saudacao}! Tudo bem? Aqui é {remetente}, da {empresa}. {Vi|Encontrei} a *{nome}* no Google e {gostei|curti} do site de vocês. A gente ajuda empresas como a sua a {automatizar o atendimento|responder clientes 24h} no WhatsApp com IA (agendamentos, orçamentos e dúvidas frequentes) e a criar sistemas sob medida. {Faz sentido conversarmos 10 minutos?|Posso te mostrar como funciona?}"
+    ],
+    "followup": [
+      "{Oi|Olá} de novo! {Só passando para saber|Passando rapidinho para saber} se você conseguiu ver minha mensagem sobre {o site|a presença online} da *{nome}*. {Se fizer sentido, te mando alguns exemplos por aqui mesmo.|Se tiver interesse, te mostro exemplos por aqui mesmo.}"
+    ],
+    "rodape": "\n\n_(Se preferir não receber mensagens, é só responder SAIR.)_",
+    "optoutResposta": "Tudo certo, não vou mais te enviar mensagens. Desculpe o incômodo e sucesso! 🙏"
+  }
+}
