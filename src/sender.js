@@ -47,6 +47,16 @@ const REPLYABLE = ['enviado', 'followup', 'respondeu'];
 
 // ───────────────────────────── canal: WhatsApp Web ─────────────────────────────
 
+async function hasPuppeteerChrome() {
+  const { existsSync } = await import('node:fs');
+  const { default: puppeteer } = await import('puppeteer');
+  try {
+    return existsSync(puppeteer.executablePath());
+  } catch {
+    return false;
+  }
+}
+
 export async function startWhatsApp({ visible = false } = {}) {
   const { default: wweb } = await import('whatsapp-web.js');
   const { default: qrcode } = await import('qrcode-terminal');
@@ -54,7 +64,12 @@ export async function startWhatsApp({ visible = false } = {}) {
 
   const client = new Client({
     authStrategy: new LocalAuth({ dataPath: join(ROOT, '.wwebjs_auth') }),
-    puppeteer: { headless: !visible, args: ['--no-sandbox', '--disable-setuid-sandbox'] },
+    puppeteer: {
+      headless: !visible,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      // Usa o Google Chrome do computador se o navegador do puppeteer não foi baixado
+      ...(await hasPuppeteerChrome() ? {} : { channel: 'chrome' }),
+    },
   });
 
   client.on('qr', (qr) => {

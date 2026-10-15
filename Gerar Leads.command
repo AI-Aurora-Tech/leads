@@ -28,6 +28,16 @@ if [ ! -d node_modules ]; then
   npm install || { echo "❌ Falha no npm install. Veja a mensagem acima."; pausa; exit 1; }
   echo
 fi
+# O npm novo bloqueia o script que baixa o navegador do robô; baixa explicitamente se faltar
+if ! node --input-type=module -e "import p from 'puppeteer'; import { existsSync } from 'node:fs'; process.exit(existsSync(p.executablePath()) ? 0 : 1)" 2>/dev/null; then
+  echo "🌐 Baixando o navegador que o robô usa para pesquisar no Google Maps (~150 MB, só na primeira vez)..."
+  if ! npx --no-install puppeteer browsers install chrome; then
+    echo "⚠️  Não consegui baixar o navegador do robô. Vou tentar usar o Google Chrome do seu Mac."
+    echo "   Se não tiver o Chrome instalado, baixe em https://www.google.com/chrome e rode de novo."
+  fi
+  echo
+fi
+
 [ -f config.json ] || cp config.example.json config.json
 [ -f .env ] || cp .env.example .env
 
@@ -45,9 +55,12 @@ fi
 
 # 4) O que buscar
 echo
+echo "   (o robô trabalha com telefones do Brasil — cidades de outros países não geram leads)"
 read -r -p "📍 Cidade (ex: Campinas, SP — várias separadas por ;): " CIDADE
-read -r -p "🏷️  Nicho (Enter = TODOS os nichos; ou ex: padaria;barbearia): " NICHO
+read -r -p "🏷️  Nicho (Enter ou 'todos' = TODOS os nichos; ou ex: padaria;barbearia): " NICHO
 if [ -z "$CIDADE" ]; then echo "Cidade é obrigatória."; pausa; exit 1; fi
+NICHO_LOWER=$(printf '%s' "$NICHO" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+case "$NICHO_LOWER" in todos|todas|tudo|all|"*") NICHO="" ;; esac
 
 echo
 echo "🔎 Buscando... O painel abre no navegador assim que os primeiros leads aparecerem"
@@ -61,7 +74,12 @@ else
   npm run --silent gerar -- --cidade "$CIDADE"
 fi
 
+STATUS=$?
 echo
-echo "✅ Pronto! Seus leads estão em: $(pwd)/data/leads.html"
-open data/leads.html 2>/dev/null
+if [ $STATUS -ne 0 ]; then
+  echo "❌ O robô parou por causa do erro acima. Se não souber resolver, copie a mensagem e me mande."
+else
+  echo "✅ Pronto! Seus leads estão em: $(pwd)/data/leads.html"
+  open data/leads.html 2>/dev/null
+fi
 pausa

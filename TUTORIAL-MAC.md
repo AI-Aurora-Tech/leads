@@ -52,10 +52,13 @@ Na primeira vez, o macOS bloqueia porque o arquivo veio da internet:
 ### O que vai acontecer
 
 1. **Na primeira vez**, ele instala tudo sozinho. Leva de 3 a 5 minutos e baixa um navegador que o robô usa para pesquisar no Google Maps.
+   Avisos amarelos como `npm warn deprecated`, `vulnerabilities` ou `install-scripts blocked` são normais: pode ignorar.
 2. Ele pergunta:
    - **Seu nome**: aparece na mensagem ("Aqui é *Seu Nome*, da AuroraTech"). Só pergunta uma vez.
    - **Cidade**: ex.: `Campinas, SP`. Para várias: `Campinas, SP;Sumaré, SP;Hortolândia, SP`
-   - **Nicho**: aperte **Enter** para buscar **todos os nichos**, ou digite alguns: `padaria;barbearia;oficina mecânica`
+   - **Nicho**: aperte **Enter** (ou digite `todos`) para buscar **todos os nichos**, ou digite alguns: `padaria;barbearia;oficina mecânica`
+
+   ⚠️ O robô trabalha com **telefones do Brasil**. Cidades de outros países (ex.: New York) não geram leads.
 3. Ele começa a buscar nicho por nicho. Assim que aparecem os primeiros leads, **a página abre sozinha no navegador**.
    Ela vai sendo atualizada enquanto o robô trabalha: aperte `⌘ Cmd + R` na página para ver os novos.
 
@@ -123,6 +126,7 @@ node src/cli.js resumo                          # quantos leads em cada etapa
 
 | Problema | Solução |
 |---|---|
+| `Could not find Chrome` ou "O navegador do robô não está instalado" | No Terminal, dentro da pasta: `npx puppeteer browsers install chrome`. Ou instale o [Google Chrome](https://www.google.com/chrome), que o robô usa no lugar |
 | `command not found: node` | Instale o Node.js (passo 1) e **abra um Terminal novo** |
 | "não pode ser aberto porque é de um desenvolvedor não identificado" | Use o Jeito 1 (Terminal) ou o botão direito → Abrir |
 | Muitos nichos com "0 encontrados" | O Google pode ter mostrado um captcha. Espere uns minutos e rode de novo (ele refaz só os que deram 0), ou use a chave (passo 6) |

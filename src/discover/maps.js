@@ -3,9 +3,34 @@
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function searchMaps({ query, max = 60, headless = true }) {
+export class BrowserMissingError extends Error {
+  constructor() {
+    super(
+      'O navegador do robô não está instalado. Rode no Terminal, dentro da pasta do robô:\n' +
+        '     npx puppeteer browsers install chrome\n' +
+        '   (ou instale o Google Chrome normal: https://www.google.com/chrome) e tente de novo.',
+    );
+    this.name = 'BrowserMissingError';
+  }
+}
+
+/** Abre o Chrome do puppeteer; se ele não foi baixado, tenta o Google Chrome instalado no computador. */
+export async function launchBrowser(options) {
   const { default: puppeteer } = await import('puppeteer');
-  const browser = await puppeteer.launch({ headless, args: ['--lang=pt-BR', '--no-sandbox', '--disable-setuid-sandbox'] });
+  try {
+    return await puppeteer.launch(options);
+  } catch (err) {
+    if (!/could not find (chrome|expected browser)|browser was not found/i.test(err.message)) throw err;
+    try {
+      return await puppeteer.launch({ ...options, channel: 'chrome' });
+    } catch {
+      throw new BrowserMissingError();
+    }
+  }
+}
+
+export async function searchMaps({ query, max = 60, headless = true }) {
+  const browser = await launchBrowser({ headless, args: ['--lang=pt-BR', '--no-sandbox', '--disable-setuid-sandbox'] });
   try {
     const page = await browser.newPage();
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'pt-BR,pt;q=0.9' });
