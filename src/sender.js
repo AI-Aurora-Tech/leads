@@ -3,6 +3,7 @@
 //   cloud → WhatsApp Cloud API oficial da Meta, template aprovado + webhook
 
 import { join } from 'node:path';
+import { workingBrowserPath } from './browser.js';
 import { ROOT, env } from './config.js';
 import {
   findLeadByContact,
@@ -47,16 +48,6 @@ const REPLYABLE = ['enviado', 'followup', 'respondeu'];
 
 // ───────────────────────────── canal: WhatsApp Web ─────────────────────────────
 
-async function hasPuppeteerChrome() {
-  const { existsSync } = await import('node:fs');
-  const { default: puppeteer } = await import('puppeteer');
-  try {
-    return existsSync(puppeteer.executablePath());
-  } catch {
-    return false;
-  }
-}
-
 export async function startWhatsApp({ visible = false } = {}) {
   const { default: wweb } = await import('whatsapp-web.js');
   const { default: qrcode } = await import('qrcode-terminal');
@@ -67,8 +58,8 @@ export async function startWhatsApp({ visible = false } = {}) {
     puppeteer: {
       headless: !visible,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      // Usa o Google Chrome do computador se o navegador do puppeteer não foi baixado
-      ...(await hasPuppeteerChrome() ? {} : { channel: 'chrome' }),
+      // Mesmo navegador que funciona na busca (Chrome do computador ou o do puppeteer)
+      executablePath: await workingBrowserPath(),
     },
   });
 

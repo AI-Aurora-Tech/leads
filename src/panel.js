@@ -2,7 +2,7 @@
 // Você envia manualmente pelo seu próprio WhatsApp.
 
 import { formatPhone } from './phone.js';
-import { buildMessage, shortName } from './message.js';
+import { buildMessage, renderTemplate, shortName } from './message.js';
 
 const KIND_LABEL = {
   sem_site: 'Sem site',
@@ -15,8 +15,15 @@ export function waLink(phone, text) {
   return `https://wa.me/${phone}${text ? `?text=${encodeURIComponent(text)}` : ''}`;
 }
 
-/** Mensagem para envio manual: sem o rodapé de opt-out da automação. */
+/** Mensagem para envio manual: a mensagem padrão do config (templates.manual) ou o template por motivo, sem rodapé. */
 export function manualMessage(lead, config) {
+  if (config.templates.manual) {
+    return renderTemplate(config.templates.manual, {
+      nome: shortName(lead.name),
+      cidade: lead.city || '',
+      categoria: (lead.category || '').toLowerCase(),
+    });
+  }
   return buildMessage(lead, { ...config, templates: { ...config.templates, rodape: '' } });
 }
 
@@ -41,6 +48,8 @@ export function leadToCard(lead, config) {
     tipoLabel: KIND_LABEL[reasons.kind] || '',
     problemas: reasons.problems || [],
     mensagem: manualMessage(lead, config),
+    contatado: lead.status === 'contatado',
+    whatsapp: lead.wa_check === 1 ? 'sim' : lead.wa_check === 0 ? 'nao' : '',
   };
 }
 
@@ -60,6 +69,7 @@ export function renderPanel(cards, { title = 'Leads AuroraTech', generatedAt = n
     :root { --bg:#0f1115; --card:#181b21; --text:#e8eaed; --muted:#98a2b3; --line:#2a2f37; --accent:#a78bfa; --wa:#25d366; --tag:#232830; }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
   header { position:sticky; top:0; z-index:2; background:var(--bg); border-bottom:1px solid var(--line); padding:12px 16px; }
   h1 { font-size:18px; margin:0 0 8px; }
@@ -99,17 +109,38 @@ export function renderPanel(cards, { title = 'Leads AuroraTech', generatedAt = n
       .join('')}</select>
     <select id="cat"><option value="">Todos os nichos</option></select>
     <label><input type="checkbox" id="hide" checked> Ocultar contatados</label>
-    <label><input type="checkbox" id="cel"> Só celular</label>
+    <label><input type="checkbox" id="cel" checked> Só celular</label>
+    <label id="verifLabel" hidden><input type="checkbox" id="verif"> Só WhatsApp verificado</label>
   </div>
   <div class="stats" id="stats"></div>
+  <div class="stats" id="novos" hidden><button class="btn" onclick="location.reload()">🔄 Há leads novos — clique para atualizar</button></div>
 </header>
 <main id="list"></main>
 <script>
 const LEADS = ${data};
 const KEY = 'aurora-leads-contatados';
+// Aberto pelo robô (http://localhost): "contatado" fica salvo no banco do robô e nunca se perde.
+// Aberto como arquivo: fica salvo só neste navegador.
+const SERVER = location.protocol.startsWith('http');
 let done = {};
 try { done = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch {}
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(done)); } catch {} };
+for (const l of LEADS) if (l.contatado) done[l.id] = done[l.id] || true;
+const save = (id) => {
+  try { localStorage.setItem(KEY, JSON.stringify(done)); } catch {}
+  if (SERVER && id != null) {
+    fetch('api/contatado', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: Number(id), contatado: Boolean(done[id]) }) }).catch(() => {});
+  }
+};
+if (LEADS.some((l) => l.whatsapp)) document.getElementById('verifLabel').hidden = false;
+if (SERVER) {
+  // Avisa quando o robô encontrar leads novos
+  setInterval(async () => {
+    try {
+      const r = await (await fetch('api/total')).json();
+      if (r.total !== LEADS.length) document.getElementById('novos').hidden = false;
+    } catch {}
+  }, 20000);
+}
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const wa = (phone, text) => 'https://wa.me/' + phone + '?text=' + encodeURIComponent(text);
@@ -127,7 +158,8 @@ function render() {
   const q = $('q').value.toLowerCase().trim();
   const rows = LEADS.filter((l) =>
     (!$('hide').checked || !done[l.id]) &&
-    (!$('cel').checked || l.tipoTelefone === 'celular') &&
+    (!$('cel').checked || l.tipoTelefone === 'celular' || l.whatsapp === 'sim') &&
+    (!$('verif').checked || l.whatsapp === 'sim') &&
     (!$('tipo').value || l.tipo === $('tipo').value) &&
     (!$('cat').value || l.categoria === $('cat').value) &&
     (!q || (l.nome + ' ' + l.categoria + ' ' + l.cidade + ' ' + l.endereco).toLowerCase().includes(q)));
@@ -144,6 +176,7 @@ function render() {
       <div class="tags">
         \${l.tipoLabel ? '<span class="tag k">' + esc(l.tipoLabel) + '</span>' : ''}
         <span class="tag">📞 \${esc(l.telefoneFmt)} · \${l.tipoTelefone === 'celular' ? 'celular' : 'fixo'}</span>
+        \${l.whatsapp === 'sim' ? '<span class="tag">✅ WhatsApp verificado</span>' : ''}
       </div>
       \${l.problemas.length ? '<ul class="prob">' + l.problemas.map((p) => '<li>' + esc(p) + '</li>').join('') + '</ul>' : ''}
       <div class="links">
@@ -169,7 +202,7 @@ $('list').addEventListener('click', async (e) => {
   if (el.dataset.act === 'wa') {
     e.preventDefault();
     window.open(wa(lead.telefone, text), '_blank');
-    done[lead.id] = new Date().toISOString(); save();
+    done[lead.id] = new Date().toISOString(); save(lead.id);
     card.classList.add('done'); card.querySelector('[data-act=done]').checked = true;
     updateStats();
   } else if (el.dataset.act === 'copy') {
@@ -181,9 +214,9 @@ $('list').addEventListener('change', (e) => {
   if (e.target.dataset.act !== 'done') return;
   const id = e.target.closest('.card').dataset.id;
   if (e.target.checked) done[id] = new Date().toISOString(); else delete done[id];
-  save(); render();
+  save(id); render();
 });
-for (const id of ['q', 'tipo', 'cat', 'hide', 'cel']) $(id).addEventListener('input', render);
+for (const id of ['q', 'tipo', 'cat', 'hide', 'cel', 'verif']) $(id).addEventListener('input', render);
 render();
 </script>
 </body>

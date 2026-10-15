@@ -9,27 +9,21 @@ Sistema de prospecção automática para a [AuroraTech](https://www.auroratech.a
 5. **Monitora respostas**: quem responde vira `respondeu` e você recebe um alerta no seu WhatsApp pessoal; quem pede para sair nunca mais recebe mensagem
 6. **Follow-up** automático (1 vez) para quem não respondeu em 3 dias
 
-## Jeito mais simples: só os leads + botão do WhatsApp
-
-Se você prefere mandar as mensagens você mesmo (sem automação e sem risco para o número):
+## Jeito mais simples: painel de leads + botão do WhatsApp
 
 > 🍎 **No Mac?** Siga o **[TUTORIAL-MAC.md](TUTORIAL-MAC.md)**: passo a passo do zero, sem precisar saber programar.
 
 ```bash
-bash "Gerar Leads.command"                         # pergunta cidade e nicho e faz tudo
-# ou direto:
-npm run gerar -- --cidade "Campinas, SP"           # TODOS os nichos (113) da cidade
-npm run gerar -- --cidade "Campinas, SP" --termo "padaria;barbearia"   # só alguns nichos
+bash "Gerar Leads.command"        # busca no Brasil todo (113 nichos × 108 cidades) e abre o painel
+bash "Abrir Painel.command"       # só abre o painel (http://localhost:4000)
+bash "Verificar WhatsApp.command" # confere no WhatsApp Web quais números têm WhatsApp (não envia nada)
 ```
 
-Isso busca as empresas nicho por nicho, analisa os sites e gera **`data/leads.html`**, que abre sozinho no navegador
-e é atualizado a cada nicho buscado.
-Cada empresa vem com nota (score), motivo do contato, telefone, links do site e do Google Maps,
-e uma **mensagem pronta e editável**. O botão **💬 Abrir no WhatsApp** abre o app (ou o WhatsApp Web)
-na conversa com a mensagem já escrita: é só apertar enviar. O lead fica marcado como "contatado" no painel.
-
-Sem `--termo`/`--cidade`, ele roda todos os nichos e cidades do `config.json`. Para regerar só a página: `npm run painel`.
-O CSV (`node src/cli.js exportar`) também traz uma coluna `whatsapp` com o mesmo link.
+- O painel mostra cada lead com a **mensagem padrão** (`templates.manual` no config) e o botão **💬 Abrir no WhatsApp**.
+  Quem você contata fica salvo no banco (`data/leads.db`).
+- **Sem repetidos:** o mesmo lugar ou o mesmo telefone nunca entram duas vezes.
+- **Navegador:** usa o Google Chrome/Edge/Brave instalado; se não houver, o Chrome do puppeteer.
+- Opções avançadas: `npm run gerar -- --cidade "Recife, PE" --termo "padaria;barbearia"`.
 
 ## Instalação (no seu computador)
 

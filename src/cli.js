@@ -4,7 +4,8 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { env, loadConfig } from './config.js';
-import { getDb, insertLead, markSearch, searchDone, updateLead, STATUSES } from './db.js';
+import { getDb, insertLead, markSearch, panelLeads, searchDone, updateLead, STATUSES } from './db.js';
+import { startPanelServer } from './server.js';
 import { normalizePhone, formatPhone } from './phone.js';
 import { analyzeSite, scoreLead, socialHost } from './qualify.js';
 import { buildMessage, buildMessageAI } from './message.js';
@@ -25,12 +26,18 @@ Uso: node src/cli.js <comando> [opções]   (ou: npm run <comando> -- [opções]
   qualificar   Analisa site/telefone de cada lead novo e calcula o score
                  --todos                   reanalisa também os já qualificados
 
-  gerar        Faz tudo de uma vez: busca TODOS os nichos, qualifica e abre o painel no navegador.
-               O painel é atualizado a cada nicho buscado. Ex.: gerar --cidade "Campinas, SP"
+  gerar        Faz tudo: busca todos os nichos nas cidades do config (Brasil todo), qualifica
+               e abre o painel em http://localhost:4000. Para continuar depois, rode de novo.
                (aceita as opções do buscar; vários valores separados por ";")
 
-  painel       Gera data/leads.html: lista de leads com botão "Abrir no WhatsApp" e mensagem pronta
-                 --arquivo data/leads.html  --todos (inclui já enviados/descartados)
+  painel       Abre o painel de leads (http://localhost:4000) com botão "Abrir no WhatsApp".
+               O que você marca como contatado fica salvo no banco do robô.
+                 --arquivo leads.html      gera um HTML solto em vez do painel
+
+  verificar    Confere no WhatsApp Web (QR code) quais números têm WhatsApp, sem enviar nada.
+                 --limite 300              quantos números conferir nesta rodada
+
+  navegador    Confere se o robô consegue abrir um navegador
 
   leads        Lista leads    --status qualificado  --top 30
 
@@ -78,14 +85,26 @@ const { positionals, values } = parseArgs({
 
 const config = loadConfig();
 
-/** Abre o arquivo no navegador padrão (Mac, Windows ou Linux). */
+/** Embaralhamento determinístico (mesma ordem em toda execução), para retomar de onde parou. */
+function shuffle(items, seed = 20261015) {
+  const out = [...items];
+  let x = seed;
+  const rand = () => ((x = (x * 1103515245 + 12345) % 2147483648) / 2147483648);
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/** Abre um arquivo ou endereço no navegador padrão (Mac, Windows ou Linux). */
 function openFile(file) {
-  const abs = resolve(file);
+  const abs = /^https?:/.test(file) ? file : resolve(file);
   const [bin, ...argv] =
     process.platform === 'darwin' ? ['open', abs] : process.platform === 'win32' ? ['cmd', '/c', 'start', '', abs] : ['xdg-open', abs];
   try {
     spawn(bin, argv, { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
-    console.log(`   🌐 Abrindo ${file} no navegador... (atualize a página para ver novos leads)`);
+    console.log(`   Abrindo ${file} no navegador...`);
   } catch {
     // sem navegador disponível — o caminho do arquivo já foi mostrado
   }
@@ -111,35 +130,35 @@ const commands = {
     const max = Number(values.max || (source === 'maps' ? config.busca.maxPorBuscaNavegador : config.busca.maxPorBusca));
     console.log(`${termos.length} nicho(s) × ${cidades.length} cidade(s), até ${max} empresas por busca (fonte: ${source}).`);
 
+    // Ordem embaralhada (sempre a mesma) para trazer leads variados do Brasil todo desde o começo
+    const combos = shuffle(cidades.flatMap((cidade) => termos.map((termo) => ({ cidade, termo }))));
+    const pending = values.refazer ? combos : combos.filter(({ cidade, termo }) => !searchDone(`${termo} em ${cidade}`));
+    if (pending.length < combos.length) console.log(`↷ ${combos.length - pending.length} buscas já feitas antes foram puladas.`);
+
     let totalNew = 0;
-    for (const cidade of cidades) {
-      for (const termo of termos) {
-        const query = `${termo} em ${cidade}`;
-        if (!values.refazer && searchDone(query)) {
-          console.log(`↷ ${query} (já buscado — use --refazer)`);
-          continue;
+    for (const [i, { cidade, termo }] of pending.entries()) {
+      const query = `${termo} em ${cidade}`;
+      process.stdout.write(`[${i + 1}/${pending.length}] 🔎 ${query} ... `);
+      try {
+        const found = await search({ query, apiKey: env.placesKey, max });
+        let added = 0;
+        let noPhone = 0;
+        for (const p of found) {
+          const phone = normalizePhone(p.rawPhone);
+          if (!phone) noPhone++;
+          if (insertLead({ ...p, phone: phone?.e164, phoneType: phone?.type, city: cidade, query })) added++;
         }
-        process.stdout.write(`🔎 ${query} ... `);
-        try {
-          const found = await search({ query, apiKey: env.placesKey, max });
-          let added = 0;
-          let noPhone = 0;
-          for (const p of found) {
-            const phone = normalizePhone(p.rawPhone);
-            if (!phone) noPhone++;
-            if (insertLead({ ...p, phone: phone?.e164, phoneType: phone?.type, city: cidade, query })) added++;
-          }
-          if (found.length) markSearch(query, source, found.length); // vazio = tenta de novo na próxima vez
-          totalNew += added;
-          console.log(`${found.length} encontrados, ${added} novos${noPhone ? ` (${noPhone} sem telefone brasileiro)` : ''}`);
-          if (added && afterEach) await afterEach();
-        } catch (err) {
-          console.log(`erro: ${err.message}`);
-          if (err.name === 'BrowserMissingError') {
-            process.exitCode = 1;
-            return; // sem navegador nenhuma busca funciona — não adianta tentar as outras
-          }
+        if (found.length) markSearch(query, source, found.length); // vazio = tenta de novo na próxima vez
+        totalNew += added;
+        console.log(`${found.length} encontrados, ${added} novos${noPhone ? ` (${noPhone} sem telefone brasileiro)` : ''}`);
+        if (added && afterEach) await afterEach();
+      } catch (err) {
+        if (err.name === 'BrowserMissingError') {
+          console.log(`\n\n❌ ${err.message}`);
+          process.exitCode = 1;
+          return; // sem navegador nenhuma busca funciona — não adianta tentar as outras
         }
+        console.log(`erro: ${err.message.split('\n')[0].slice(0, 160)}`);
       }
     }
     console.log(`\n✅ ${totalNew} leads novos.${afterEach ? '' : ' Próximo passo: npm run qualificar'}`);
@@ -200,38 +219,63 @@ const commands = {
     }
   },
 
-  painel({ quiet = false } = {}) {
-    const file = values.arquivo || 'data/leads.html';
-    const rows = getDb()
-      .prepare(
-        `SELECT * FROM leads WHERE phone IS NOT NULL ${values.todos ? "AND status != 'optout'" : "AND status = 'qualificado'"}
-         ORDER BY score DESC, reviews DESC`,
-      )
-      .all();
-    writeFileSync(file, renderPanel(rows.map((l) => leadToCard(l, config))));
-    if (!quiet) console.log(`✅ ${rows.length} leads no painel: ${file}\n   Abra no navegador (no celular, o botão abre direto o app do WhatsApp).`);
-    return { file, count: rows.length };
+  /** Abre o painel servido pelo robô; com --arquivo, gera um HTML solto. */
+  async painel({ wait = true } = {}) {
+    if (values.arquivo) {
+      const rows = panelLeads({ all: values.todos });
+      writeFileSync(values.arquivo, renderPanel(rows.map((l) => leadToCard(l, config))));
+      console.log(`✅ ${rows.length} leads no arquivo ${values.arquivo}`);
+      return;
+    }
+    let url = 'http://localhost:4000/';
+    try {
+      ({ url } = await startPanelServer(config, { port: 4000 }));
+    } catch (err) {
+      if (err.code !== 'EADDRINUSE') throw err;
+      console.log(`🌐 O painel já está aberto em outra janela do robô: ${url}`);
+      wait = false;
+    }
+    openFile(url);
+    if (wait) {
+      console.log('   Deixe esta janela aberta enquanto usa o painel. Para sair: Ctrl+C.');
+      await new Promise(() => {});
+    }
   },
 
-  // Busca nicho por nicho e já atualiza o painel a cada busca: dá para começar a contatar
+  // Busca e já qualifica a cada busca; o painel (http://localhost:4000) mostra os leads novos
   // enquanto o resto ainda está sendo buscado.
   async gerar() {
     values.todos = false;
-    let opened = false;
+    await commands.painel({ wait: false });
     const refresh = async () => {
       const ok = await commands.qualificar({ quiet: true });
-      const { file, count } = commands.painel({ quiet: true });
-      console.log(`   ↳ +${ok} qualificados · painel com ${count} leads`);
-      if (!opened && count) {
-        opened = true;
-        openFile(file);
-      }
+      console.log(`   ↳ +${ok} qualificados · ${panelLeads().length} leads no painel`);
     };
     await commands.buscar({ afterEach: refresh });
-    if (process.exitCode) return;
+    if (process.exitCode) process.exit(process.exitCode);
     await refresh();
-    const { file } = commands.painel();
-    if (!opened) openFile(file);
+    console.log('\n✅ Busca concluída. O painel continua aberto — Ctrl+C para sair.');
+    await new Promise(() => {});
+  },
+
+  /** Confere no WhatsApp Web (QR code) quais números têm WhatsApp, sem enviar nada. */
+  async verificar() {
+    const { verifyNumbers } = await import('./verify.js');
+    await verifyNumbers({ limit: Number(values.limite || 300), visible: values.visivel });
+  },
+
+  /** Confere se há um navegador que o robô consiga abrir. */
+  async navegador() {
+    const { launchBrowser, BrowserMissingError } = await import('./browser.js');
+    try {
+      const browser = await launchBrowser({ headless: true, args: ['--no-sandbox'] });
+      console.log(`✅ Navegador OK: ${browser.process()?.spawnfile ?? ''}`);
+      await browser.close();
+    } catch (err) {
+      if (!(err instanceof BrowserMissingError)) throw err;
+      console.log(`❌ ${err.message}`);
+      process.exitCode = 1;
+    }
   },
 
   async enviar() {

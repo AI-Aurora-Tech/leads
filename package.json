@@ -19,7 +19,9 @@
     "preview": "node --disable-warning=ExperimentalWarning src/cli.js preview",
     "enviar": "node --disable-warning=ExperimentalWarning src/cli.js enviar",
     "exportar": "node --disable-warning=ExperimentalWarning src/cli.js exportar",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "verificar": "node --disable-warning=ExperimentalWarning src/cli.js verificar",
+    "navegador": "node --disable-warning=ExperimentalWarning src/cli.js navegador"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.134.0",

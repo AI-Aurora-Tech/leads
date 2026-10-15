@@ -19,3 +19,12 @@ test('painel: mensagem manual sem rodapé e HTML seguro', () => {
   assert.equal(html.match(/<\/script>/g).length, 1); // só o fechamento real da tag
   assert.match(html, /wa\.me/);
 });
+
+test('painel usa a mensagem padrão do config (templates.manual)', () => {
+  const config = loadConfig();
+  const card = leadToCard({ id: 2, name: 'Oficina Y', phone: '5581999990009', phone_type: 'celular', reasons: '{}' }, config);
+  assert.equal(card.mensagem, config.templates.manual);
+  assert.match(card.mensagem, /^Olá! 👨🏾‍💻/);
+  assert.match(card.mensagem, /www\.auroratech\.app\.br/);
+  assert.match(waLink(card.telefone, card.mensagem), /^https:\/\/wa\.me\/5581999990009\?text=Ol%C3%A1!%20/);
+});

@@ -1,33 +1,11 @@
 // Busca sem chave de API: abre o Google Maps num navegador (puppeteer) e lê os resultados.
 // Mais lento e sujeito a mudanças de layout do Google — use a Places API quando puder.
 
+import { launchBrowser } from '../browser.js';
+
+export { BrowserMissingError } from '../browser.js';
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-export class BrowserMissingError extends Error {
-  constructor() {
-    super(
-      'O navegador do robô não está instalado. Rode no Terminal, dentro da pasta do robô:\n' +
-        '     npx puppeteer browsers install chrome\n' +
-        '   (ou instale o Google Chrome normal: https://www.google.com/chrome) e tente de novo.',
-    );
-    this.name = 'BrowserMissingError';
-  }
-}
-
-/** Abre o Chrome do puppeteer; se ele não foi baixado, tenta o Google Chrome instalado no computador. */
-export async function launchBrowser(options) {
-  const { default: puppeteer } = await import('puppeteer');
-  try {
-    return await puppeteer.launch(options);
-  } catch (err) {
-    if (!/could not find (chrome|expected browser)|browser was not found/i.test(err.message)) throw err;
-    try {
-      return await puppeteer.launch({ ...options, channel: 'chrome' });
-    } catch {
-      throw new BrowserMissingError();
-    }
-  }
-}
 
 export async function searchMaps({ query, max = 60, headless = true }) {
   const browser = await launchBrowser({ headless, args: ['--lang=pt-BR', '--no-sandbox', '--disable-setuid-sandbox'] });
