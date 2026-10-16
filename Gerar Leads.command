@@ -8,9 +8,9 @@ echo "=============================================="
 echo
 source scripts/preparar.sh
 
-echo "🔎 Buscando empresas no Brasil todo (113 nichos × 108 cidades)."
-echo "   O painel abre no navegador e avisa quando chegam leads novos."
-echo "   Para parar: Ctrl+C. Rodando de novo, ele continua de onde parou."
+echo "🔎 Buscando 50 leads novos no Brasil todo (113 nichos × 108 cidades)."
+echo "   No final ele pergunta se você quer +50 ou encerrar e abrir o painel."
+echo "   Pode rodar de novo no mesmo dia: ele continua de onde parou, sem repetir."
 echo
 npm run --silent gerar -- "$@"
 STATUS=$?

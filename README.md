@@ -14,7 +14,7 @@ Sistema de prospecção automática para a [AuroraTech](https://www.auroratech.a
 > 🍎 **No Mac?** Siga o **[TUTORIAL-MAC.md](TUTORIAL-MAC.md)**: passo a passo do zero, sem precisar saber programar.
 
 ```bash
-bash "Gerar Leads.command"        # busca no Brasil todo até ter 50 leads no dia e então abre o painel
+bash "Gerar Leads.command"        # busca 50 leads novos, pergunta se quer +50 e, ao encerrar, abre o painel
 bash "Abrir Painel.command"       # só abre o painel (http://localhost:4000)
 bash "Verificar WhatsApp.command" # confere no WhatsApp Web quais números têm WhatsApp (não envia nada)
 ```
@@ -23,7 +23,7 @@ bash "Verificar WhatsApp.command" # confere no WhatsApp Web quais números têm 
   Quem você contata fica salvo no banco (`data/leads.db`).
 - **Sem repetidos:** o mesmo lugar ou o mesmo telefone nunca entram duas vezes.
 - **Navegador:** usa o Google Chrome/Edge/Brave instalado; se não houver, o Chrome do puppeteer.
-- **Meta diária:** `busca.leadsPorDia` (50) celulares qualificados por dia; outra quantidade com `--meta 80` (`--meta 0` = sem limite).
+- **Rodadas de 50:** cada execução busca `busca.leadsPorDia` (50) celulares qualificados novos e pergunta se quer +50. Pode rodar várias vezes no dia. Outra quantidade: `--meta 80` (`--meta 0` = sem limite).
 - Opções avançadas: `npm run gerar -- --cidade "Recife, PE" --termo "padaria;barbearia"`.
 
 ## Instalação (no seu computador)

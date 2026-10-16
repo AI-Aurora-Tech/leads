@@ -27,6 +27,12 @@ export function manualMessage(lead, config) {
   return buildMessage(lead, { ...config, templates: { ...config.templates, rodape: '' } });
 }
 
+/** created_at vem do SQLite em UTC ("2026-10-16 13:00:00"); compara com a data local do computador. */
+function isToday(createdAt, now = new Date()) {
+  if (!createdAt) return false;
+  return new Date(`${createdAt.replace(' ', 'T')}Z`).toDateString() === now.toDateString();
+}
+
 export function leadToCard(lead, config) {
   const reasons = lead.reasons ? JSON.parse(lead.reasons) : {};
   return {
@@ -50,6 +56,7 @@ export function leadToCard(lead, config) {
     mensagem: manualMessage(lead, config),
     contatado: lead.status === 'contatado',
     whatsapp: lead.wa_check === 1 ? 'sim' : lead.wa_check === 0 ? 'nao' : '',
+    hoje: isToday(lead.created_at),
   };
 }
 
@@ -108,6 +115,7 @@ export function renderPanel(cards, { title = 'Leads AuroraTech', generatedAt = n
       .map(([k, v]) => `<option value="${k}">${v}</option>`)
       .join('')}</select>
     <select id="cat"><option value="">Todos os nichos</option></select>
+    <label><input type="checkbox" id="hoje" checked> Só os de hoje</label>
     <label><input type="checkbox" id="hide" checked> Ocultar contatados</label>
     <label><input type="checkbox" id="cel" checked> Só celular</label>
     <label id="verifLabel" hidden><input type="checkbox" id="verif"> Só WhatsApp verificado</label>
@@ -160,6 +168,7 @@ function updateStats(shown) {
 function render() {
   const q = $('q').value.toLowerCase().trim();
   const rows = LEADS.filter((l) =>
+    (!$('hoje').checked || l.hoje) &&
     (!$('hide').checked || !done[l.id]) &&
     (!$('cel').checked || l.tipoTelefone === 'celular' || l.whatsapp === 'sim') &&
     (!$('verif').checked || l.whatsapp === 'sim') &&
@@ -219,7 +228,7 @@ $('list').addEventListener('change', (e) => {
   if (e.target.checked) done[id] = new Date().toISOString(); else delete done[id];
   save(id); render();
 });
-for (const id of ['q', 'tipo', 'cat', 'hide', 'cel', 'verif']) $(id).addEventListener('input', render);
+for (const id of ['q', 'tipo', 'cat', 'hoje', 'hide', 'cel', 'verif']) $(id).addEventListener('input', render);
 render();
 </script>
 </body>
