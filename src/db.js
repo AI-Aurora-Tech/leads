@@ -1,7 +1,8 @@
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ROOT } from './config.js';
+import { DATA_DIR, ROOT } from './config.js';
 
 export const STATUSES = [
   'novo', // encontrado, ainda não qualificado
@@ -18,9 +19,9 @@ export const STATUSES = [
 
 let db;
 
-export function getDb(file = join(ROOT, 'data', 'leads.db')) {
+export function getDb(file = join(DATA_DIR, 'leads.db')) {
   if (db) return db;
-  if (file !== ':memory:') mkdirSync(join(ROOT, 'data'), { recursive: true });
+  if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
   db = new DatabaseSync(file);
   db.exec(`
     PRAGMA journal_mode = WAL;
@@ -75,21 +76,130 @@ export function getDb(file = join(ROOT, 'data', 'leads.db')) {
   if (!cols.has('channel')) db.exec('ALTER TABLE leads ADD COLUMN channel TEXT');
   // 1 = número tem WhatsApp, 0 = não tem, NULL = não verificado
   if (!cols.has('wa_check')) db.exec('ALTER TABLE leads ADD COLUMN wa_check INTEGER');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_leads_wa_msg ON leads(wa_msg_id)');
+  if (!cols.has('email')) db.exec('ALTER TABLE leads ADD COLUMN email TEXT');
+  // 'en' = lead internacional (contato por e-mail); NULL = Brasil (WhatsApp)
+  if (!cols.has('lang')) db.exec('ALTER TABLE leads ADD COLUMN lang TEXT');
+  // Nome normalizado: a mesma empresa na mesma cidade não entra duas vezes (ex.: com outro telefone)
+  if (!cols.has('name_key')) db.exec('ALTER TABLE leads ADD COLUMN name_key TEXT');
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_leads_wa_msg ON leads(wa_msg_id);
+    CREATE INDEX IF NOT EXISTS idx_leads_name_key ON leads(name_key, city);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_email ON leads(email) WHERE email IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS imports (path TEXT PRIMARY KEY, mtime REAL);
+  `);
+  if (file !== ':memory:') importOldDatabases();
+  const fill = db.prepare('UPDATE leads SET name_key = ? WHERE id = ?');
+  for (const r of db.prepare('SELECT id, name FROM leads WHERE name_key IS NULL').all()) fill.run(nameKey(r.name), r.id);
   return db;
+}
+
+/** "Clínica Sorriso Ltda." → "clinicasorriso" */
+export function nameKey(name = '') {
+  return name
+    .split(/\s[-|–]\s/)[0]
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(ltda|me|epp|eireli|s\/?a|llc|inc|ltd)\.?$/, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+const CONTACTED = ['contatado', 'enviado', 'followup', 'respondeu', 'optout'];
+
+/**
+ * Bancos de versões antigas do robô (pasta data/ dentro de cada pasta baixada, ex.: "leads-main 2").
+ * Junta tudo no banco fixo: quem você já contatou numa versão antiga nunca volta como lead novo.
+ */
+function oldDatabases() {
+  const files = new Set([join(ROOT, 'data', 'leads.db')]);
+  for (const dir of new Set([dirname(ROOT), join(homedir(), 'Downloads')])) {
+    try {
+      for (const name of readdirSync(dir)) if (/^leads/i.test(name)) files.add(join(dir, name, 'data', 'leads.db'));
+    } catch {
+      // pasta inexistente ou sem permissão
+    }
+  }
+  return [...files].filter((f) => existsSync(f));
+}
+
+function importOldDatabases() {
+  for (const file of oldDatabases()) {
+    const mtime = Math.max(...[file, `${file}-wal`].filter((f) => existsSync(f)).map((f) => statSync(f).mtimeMs));
+    const seen = db.prepare('SELECT mtime FROM imports WHERE path = ?').get(file);
+    if (seen && seen.mtime >= mtime) continue;
+    try {
+      const { added, contacted } = importDatabase(file);
+      db.prepare('INSERT OR REPLACE INTO imports (path, mtime) VALUES (?, ?)').run(file, mtime);
+      if (added || contacted) console.log(`📥 Histórico antigo importado de ${file}: ${added} leads, ${contacted} já contatados.`);
+    } catch (err) {
+      console.log(`⚠️  Não consegui ler o histórico antigo em ${file}: ${err.message}`);
+    }
+  }
+}
+
+/** Abre uma cópia do banco antigo (o original nunca é alterado, e funciona mesmo sem o arquivo -shm). */
+function openCopy(file) {
+  const dir = mkdtempSync(join(tmpdir(), 'aurora-import-'));
+  for (const suffix of ['', '-wal']) if (existsSync(file + suffix)) copyFileSync(file + suffix, join(dir, `leads.db${suffix}`));
+  return new DatabaseSync(join(dir, 'leads.db'));
+}
+
+/** Copia leads e buscas de outro banco. Status de contato (contatado, optout…) sempre prevalece. */
+export function importDatabase(file) {
+  const src = openCopy(file);
+  try {
+    const mine = new Set(db.prepare('PRAGMA table_info(leads)').all().map((c) => c.name));
+    const rows = src.prepare('SELECT * FROM leads').all();
+    let added = 0;
+    let contacted = 0;
+    for (const row of rows) {
+      const keys = Object.keys(row).filter((k) => k !== 'id' && mine.has(k));
+      const res = db
+        .prepare(`INSERT OR IGNORE INTO leads (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`)
+        .run(...keys.map((k) => row[k]));
+      added += res.changes;
+      if (CONTACTED.includes(row.status)) {
+        const up = db
+          .prepare(
+            `UPDATE leads SET status = ?, sent_at = COALESCE(sent_at, ?), channel = COALESCE(channel, ?)
+             WHERE (place_id = ? OR phone = ?) AND status NOT IN (${CONTACTED.map(() => '?').join(', ')})`,
+          )
+          .run(row.status, row.sent_at ?? null, row.channel ?? null, row.place_id ?? null, row.phone ?? null, ...CONTACTED);
+        contacted += res.changes || up.changes ? 1 : 0;
+      }
+    }
+    try {
+      for (const s of src.prepare('SELECT * FROM searches').all()) {
+        db.prepare('INSERT OR IGNORE INTO searches (query, source, found, created_at) VALUES (?, ?, ?, ?)').run(s.query, s.source, s.found, s.created_at);
+      }
+    } catch {
+      // banco muito antigo, sem tabela de buscas
+    }
+    return { added, contacted };
+  } finally {
+    src.close();
+  }
 }
 
 export function findLeadByMsgId(msgId) {
   return getDb().prepare('SELECT * FROM leads WHERE wa_msg_id = ?').get(msgId);
 }
 
-/** Insere um lead se o place_id e o telefone ainda não existem. Retorna true se inseriu. */
+/**
+ * Insere um lead se ainda não existe: mesmo lugar, mesmo telefone, mesmo e-mail ou mesma empresa
+ * (nome) na mesma cidade contam como repetido. Retorna true se inseriu.
+ */
 export function insertLead(lead) {
+  const key = nameKey(lead.name);
+  if (key && getDb().prepare('SELECT 1 FROM leads WHERE name_key = ? AND city IS ?').get(key, lead.city ?? null)) return false;
+  // Brasil precisa de telefone (WhatsApp); internacional precisa de site (de onde sai o e-mail)
+  const usable = lead.lang === 'en' ? lead.website || lead.email : lead.phone;
   const res = getDb()
     .prepare(
       `INSERT OR IGNORE INTO leads
-        (place_id, name, phone, phone_type, raw_phone, address, city, category, website, rating, reviews, maps_url, source, query, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (place_id, name, phone, phone_type, raw_phone, address, city, category, website, rating, reviews, maps_url, source, query, status,
+         email, lang, name_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       lead.placeId ?? null,
@@ -106,7 +216,10 @@ export function insertLead(lead) {
       lead.mapsUrl ?? null,
       lead.source ?? null,
       lead.query ?? null,
-      lead.phone ? 'novo' : 'descartado',
+      usable ? 'novo' : 'descartado',
+      lead.email ?? null,
+      lead.lang ?? null,
+      key || null,
     );
   return res.changes > 0;
 }
@@ -178,21 +291,31 @@ export function sentToday(timeZone) {
 }
 
 /** Leads que aparecem no painel: qualificados ou já contatados, nunca os que sabidamente não têm WhatsApp. */
+// Lead do painel: Brasil com telefone (e sem "não tem WhatsApp") ou internacional com e-mail
+const PANEL_CONTACT = `((lang IS NULL AND phone IS NOT NULL AND (wa_check IS NULL OR wa_check = 1)) OR (lang = 'en' AND email IS NOT NULL))`;
+
 export function panelLeads({ all = false } = {}) {
   return getDb()
     .prepare(
-      `SELECT * FROM leads WHERE phone IS NOT NULL AND (wa_check IS NULL OR wa_check = 1)
+      `SELECT * FROM leads WHERE ${PANEL_CONTACT}
          ${all ? "AND status NOT IN ('optout', 'sem_whatsapp')" : "AND status IN ('qualificado', 'contatado')"}
        ORDER BY (status = 'contatado'), score DESC, reviews DESC`,
     )
     .all();
 }
 
-/** Leads de hoje prontos para contato (qualificados, celular, sem "não tem WhatsApp"). Conta os já contatados. */
-export function leadsToday() {
+/**
+ * Leads de hoje prontos para contato (já contatados contam).
+ * Brasil: celulares sem "não tem WhatsApp". Internacional (lang 'en'): com e-mail.
+ */
+export function leadsToday(lang) {
+  const contact =
+    lang === 'en'
+      ? "lang = 'en' AND email IS NOT NULL"
+      : "lang IS NULL AND phone_type = 'celular' AND (wa_check IS NULL OR wa_check = 1)";
   return getDb()
     .prepare(
-      `SELECT COUNT(*) AS n FROM leads WHERE phone_type = 'celular' AND (wa_check IS NULL OR wa_check = 1)
+      `SELECT COUNT(*) AS n FROM leads WHERE ${contact}
          AND status IN ('qualificado', 'contatado') AND date(created_at, 'localtime') = date('now', 'localtime')`,
     )
     .get().n;

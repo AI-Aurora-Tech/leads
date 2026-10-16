@@ -1,13 +1,23 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-try {
-  process.loadEnvFile(join(ROOT, '.env'));
-} catch {
-  // .env é opcional
+/**
+ * Pasta fixa dos dados (~/AuroraLeads): fica FORA da pasta do robô, então baixar uma versão nova
+ * não apaga o histórico de leads, os contatados, a chave do Google nem a sessão do WhatsApp.
+ */
+export const DATA_DIR = process.env.LEADS_DATA_DIR || join(homedir(), 'AuroraLeads');
+
+// O primeiro arquivo vence: o .env da pasta de dados (permanente) tem prioridade
+for (const file of [join(DATA_DIR, '.env'), join(ROOT, '.env')]) {
+  try {
+    process.loadEnvFile(file);
+  } catch {
+    // .env é opcional
+  }
 }
 
 function deepMerge(base, override) {
@@ -21,9 +31,12 @@ function deepMerge(base, override) {
 
 export function loadConfig() {
   const example = JSON.parse(readFileSync(join(ROOT, 'config.example.json'), 'utf8'));
-  const userPath = join(ROOT, 'config.json');
-  const user = existsSync(userPath) ? JSON.parse(readFileSync(userPath, 'utf8')) : {};
-  return deepMerge(example, user);
+  // config.json na pasta de dados vale para todas as versões; o da pasta do robô tem prioridade
+  let config = example;
+  for (const userPath of [join(DATA_DIR, 'config.json'), join(ROOT, 'config.json')]) {
+    if (existsSync(userPath)) config = deepMerge(config, JSON.parse(readFileSync(userPath, 'utf8')));
+  }
+  return config;
 }
 
 export const env = {

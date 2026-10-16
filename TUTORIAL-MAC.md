@@ -5,9 +5,15 @@ Brasil todo** (todas as capitais e as maiores cidades do interior). Ele analisa 
 **painel** com os melhores leads. Em cada lead tem o botão **💬 Abrir no WhatsApp**, que abre a conversa já com
 a mensagem padrão da Aurora Tech escrita. Você só aperta enviar.
 
+Também tem o **modo internacional** (passo 6): empresas dos EUA, Reino Unido, Canadá, Austrália, Irlanda e
+Nova Zelândia, com o **e-mail** encontrado no site de cada uma, para você mandar a mensagem em inglês por e-mail.
+
 **Garantias:**
-- **Sem leads repetidos:** a mesma empresa (ou o mesmo telefone, mesmo vindo de outra busca ou cidade) entra uma vez só.
-  Quem você marca como **contatado** fica salvo no banco do robô e não volta como lead novo.
+- **Sem leads repetidos:** a mesma empresa entra uma vez só. O robô compara o lugar no Google, o telefone,
+  o e-mail e o nome da empresa na mesma cidade, mesmo que ela venha de outra busca.
+  Quem você marca como **contatado** fica salvo e não volta como lead novo.
+- **Histórico guardado fora da pasta do robô**, na pasta **`AuroraLeads`** da sua pasta pessoal. Baixar uma versão
+  nova não apaga nada, e não precisa mais copiar a pasta `data`.
 - **Só números de WhatsApp:** o painel mostra por padrão só **celulares**. Para ter certeza absoluta, rode o
   **Verificar WhatsApp** (passo 5): ele confere número por número no WhatsApp Web, sem enviar nada, e tira do
   painel quem não tem WhatsApp.
@@ -25,8 +31,9 @@ a mensagem padrão da Aurora Tech escrita. Você só aperta enviar.
 2. Botão verde **`<> Code`** → **Download ZIP**
 3. Clique duas vezes no ZIP na pasta **Downloads**. Vai aparecer a pasta **`leads-main`**.
 
-> Já tinha uma versão antiga? Copie a pasta **`data`** da pasta antiga para a nova. É lá que ficam seus leads
-> e quem você já contatou.
+> Já tinha uma versão antiga? **Não apague as pastas antigas antes de rodar a versão nova uma vez.** Na primeira
+> vez, o robô procura as versões antigas na pasta Downloads (`leads-main`, `leads-main 2`…). Ele junta todos os
+> leads e contatados delas no histórico fixo (`AuroraLeads`). Depois disso as pastas antigas podem ir para o lixo.
 
 ## 3. Rode o robô
 
@@ -80,16 +87,40 @@ bash "Verificar WhatsApp.command"
 1. Aparece um **QR Code** no Terminal. No celular, abra o WhatsApp → **Aparelhos conectados** → **Conectar um aparelho** e escaneie.
 2. O robô confere até 300 números por rodada, com pausas como uma pessoa faria. **Nenhuma mensagem é enviada.**
 3. Números **sem WhatsApp** saem do painel. Os confirmados ganham o selo **✅ WhatsApp verificado**.
+4. **Quem já tem conversa com você no WhatsApp sai do painel** (fica como contatado), mesmo que você tenha
+   falado com a empresa fora do robô ou numa versão antiga.
 
 Rode de novo para conferir os próximos 300. Para outra quantidade: `bash "Verificar WhatsApp.command" --limite 100`.
 
-## 6. Dicas para não ter o número bloqueado
+## 6. Modo internacional: empresas de língua inglesa, por e-mail
+
+```
+bash "Gerar Leads Internacional.command"
+```
+
+Funciona igual ao do Brasil: busca **50 empresas** em 64 cidades de países de língua inglesa (72 tipos de negócio,
+de dentista a encanador), pergunta se você quer **+50** e, ao encerrar, abre o painel na aba **✉️ E-mail (internacional)**.
+
+- Só entram empresas com **e-mail encontrado no site** (página inicial ou página de contato). Sem e-mail, ela é descartada.
+- A mensagem vem **em inglês** (a mesma ideia da mensagem padrão), com assunto `Quick idea for <empresa>`. Dá para editar antes de enviar.
+- **✉️ Abrir no Gmail** abre o e-mail pronto no Gmail. **Abrir no app de e-mail** usa o app Mail do Mac. Os dois marcam o lead como contatado.
+- No painel, troque entre **💬 WhatsApp (Brasil)** e **✉️ E-mail (internacional)** pelas abas no topo.
+
+**Dicas para o e-mail não cair no spam:**
+- Mande no máximo **20 a 30 por dia** no começo, aos poucos.
+- Mande de um endereço com o seu domínio (ex.: `contato@auroratech.app.br`), não de um Gmail pessoal, se puder.
+- Quem responder "unsubscribe" não deve receber mais nada. A frase de saída já vem no fim da mensagem: deixe ela lá.
+  Isso também atende às leis de e-mail comercial desses países. **Canadá e Austrália** são os mais rígidos: lá só
+  vale escrever para e-mails que a empresa publica no próprio site, e sobre assunto ligado ao negócio dela, que é
+  o que o robô faz.
+
+## 7. Dicas para não ter o número bloqueado
 
 - Mande no máximo **30 a 40 mensagens por dia**, com um intervalo entre uma e outra
 - Comece pelos leads de **maior pontuação**
 - Responda rápido quem responder. Quem não tiver interesse: agradeça e não insista
 
-## 7. (Opcional) Chave do Google: buscas muito mais rápidas
+## 8. (Opcional) Chave do Google: buscas muito mais rápidas
 
 Com a chave da **Google Places API**, cada busca leva segundos e traz até 60 empresas, em vez de 20.
 O Google dá um crédito mensal gratuito.
@@ -98,28 +129,31 @@ O Google dá um crédito mensal gratuito.
 2. **APIs e serviços → Biblioteca** → **Places API (New)** → **Ativar**
 3. Cadastre um cartão em **Faturamento** (cobra só acima do crédito gratuito)
 4. **APIs e serviços → Credenciais → Criar credenciais → Chave de API** → copie
-5. No Terminal, dentro da pasta do robô: `open -e .env`. Cole a chave depois de `GOOGLE_PLACES_API_KEY=` e salve.
+5. No Terminal: `open -e ~/AuroraLeads/.env`. Cole a chave depois de `GOOGLE_PLACES_API_KEY=` e salve.
+   (Esse arquivo fica na pasta fixa, então vale para todas as versões que você baixar.)
 
-## 8. Personalizar (opcional)
+## 9. Personalizar (opcional)
 
-Crie um arquivo `config.json` na pasta do robô só com o que quiser mudar. Por exemplo, para trocar a mensagem
+Crie um arquivo `config.json` na pasta `AuroraLeads` (vale para todas as versões) só com o que quiser mudar. Por exemplo, para trocar a mensagem
 e buscar só em algumas cidades:
 
 ```json
 {
   "templates": { "manual": "Olá! Aqui é a Aurora Tech..." },
-  "busca": { "cidades": ["Recife, PE", "Olinda, PE"] }
+  "busca": { "cidades": ["Recife, PE", "Olinda, PE"] },
+  "internacional": { "assunto": "Quick idea for {nome}", "cidades": ["Austin, TX, USA"] }
 }
 ```
 
 A configuração completa (nichos, cidades, mensagem) está em `config.example.json`, que serve de referência.
 
-## 9. Problemas comuns
+## 10. Problemas comuns
 
 | Problema | Solução |
 |---|---|
 | "Não consegui abrir nenhum navegador" | Instale o **Google Chrome** (passo 1) e rode de novo |
 | `command not found: node` | Instale o Node.js (passo 1) e **abra um Terminal novo** |
 | Muitas buscas com "0 encontrados" | O Google pode ter mostrado um captcha. Pare (`Ctrl + C`), espere uns minutos e rode de novo: ele refaz só essas |
+| Apareceu de novo alguém que já contatei | Rode o **Verificar WhatsApp** (passo 5): ele tira do painel quem já tem conversa com você. Se ainda acontecer, me mande o nome da empresa |
 | O painel não abre | Abra no navegador o endereço `http://localhost:4000` (com o robô rodando) |
 | Configuração antiga | Se aparecer "Configuração antiga guardada em config.antigo.json", é normal: o robô passou a usar a configuração nova |

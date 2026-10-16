@@ -2,9 +2,10 @@
 //   web   → WhatsApp Web (whatsapp-web.js), texto livre
 //   cloud → WhatsApp Cloud API oficial da Meta, template aprovado + webhook
 
+import { cpSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { workingBrowserPath } from './browser.js';
-import { ROOT, env } from './config.js';
+import { DATA_DIR, ROOT, env } from './config.js';
 import {
   findLeadByContact,
   findLeadByMsgId,
@@ -53,8 +54,12 @@ export async function startWhatsApp({ visible = false } = {}) {
   const { default: qrcode } = await import('qrcode-terminal');
   const { Client, LocalAuth } = wweb;
 
+  // Sessão na pasta fixa de dados: baixar uma versão nova não pede o QR Code de novo
+  const dataPath = join(DATA_DIR, 'whatsapp');
+  const oldPath = join(ROOT, '.wwebjs_auth');
+  if (!existsSync(dataPath) && existsSync(oldPath)) cpSync(oldPath, dataPath, { recursive: true });
   const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: join(ROOT, '.wwebjs_auth') }),
+    authStrategy: new LocalAuth({ dataPath }),
     puppeteer: {
       headless: !visible,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],

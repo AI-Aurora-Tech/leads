@@ -15,13 +15,19 @@ Sistema de prospecção automática para a [AuroraTech](https://www.auroratech.a
 
 ```bash
 bash "Gerar Leads.command"        # busca 50 leads novos, pergunta se quer +50 e, ao encerrar, abre o painel
+bash "Gerar Leads Internacional.command"  # EUA, Reino Unido, Canadá, Austrália, Irlanda, NZ: leads com e-mail
 bash "Abrir Painel.command"       # só abre o painel (http://localhost:4000)
 bash "Verificar WhatsApp.command" # confere no WhatsApp Web quais números têm WhatsApp (não envia nada)
 ```
 
 - O painel mostra cada lead com a **mensagem padrão** (`templates.manual` no config) e o botão **💬 Abrir no WhatsApp**.
-  Quem você contata fica salvo no banco (`data/leads.db`).
-- **Sem repetidos:** o mesmo lugar ou o mesmo telefone nunca entram duas vezes.
+  Quem você contata fica salvo no banco (`~/AuroraLeads/leads.db`).
+- **Sem repetidos:** o mesmo lugar, telefone, e-mail ou nome de empresa na mesma cidade nunca entram duas vezes.
+  O `Verificar WhatsApp` também tira do painel quem já tem conversa com você no WhatsApp.
+- **Dados fora da pasta do robô:** banco, `.env`, `config.json` opcional e sessão do WhatsApp ficam em `~/AuroraLeads`
+  (ou `LEADS_DATA_DIR`). Na primeira execução, os bancos de versões antigas (`data/leads.db` nas pastas `leads*` em Downloads) são importados.
+- **Internacional (`--internacional`):** busca em inglês (`internacional.nichos`/`cidades`), acha o e-mail no site
+  (página inicial, páginas de contato, mailto, Cloudflare). O painel tem a aba ✉️ E-mail, com botões para o Gmail e o app de e-mail.
 - **Navegador:** usa o Google Chrome/Edge/Brave instalado; se não houver, o Chrome do puppeteer.
 - **Rodadas de 50:** cada execução busca `busca.leadsPorDia` (50) celulares qualificados novos e pergunta se quer +50. Pode rodar várias vezes no dia. Outra quantidade: `--meta 80` (`--meta 0` = sem limite).
 - Opções avançadas: `npm run gerar -- --cidade "Recife, PE" --termo "padaria;barbearia"`.
@@ -34,8 +40,8 @@ Requer **Node.js 22.13+**.
 git clone https://github.com/AI-Aurora-Tech/leads.git
 cd leads
 npm install
-cp .env.example .env              # preencha as chaves (todas opcionais)
-cp config.example.json config.json  # ajuste seu nome, cidades, nichos e limites
+mkdir -p ~/AuroraLeads && cp .env.example ~/AuroraLeads/.env   # preencha as chaves (todas opcionais)
+# opcional: ~/AuroraLeads/config.json só com o que quiser mudar do config.example.json
 ```
 
 No `config.json`, troque pelo menos `remetente.nome` e a lista `busca.cidades`.
@@ -161,7 +167,7 @@ usando os dados do lead (nicho, avaliações, problemas do site). Se a IA falhar
 `novo` → `qualificado` → `enviado` → `followup` → `respondeu` 🔥
 Outros: `descartado`, `sem_whatsapp`, `optout`, `erro`.
 
-Os dados ficam em `data/leads.db` (SQLite). A sessão do WhatsApp fica em `.wwebjs_auth/` (não compartilhe essa pasta).
+Os dados ficam em `~/AuroraLeads/leads.db` (SQLite). A sessão do WhatsApp fica em `~/AuroraLeads/whatsapp/` (não compartilhe essa pasta).
 
 ## Testes
 

@@ -27,14 +27,40 @@ export function applyCheck(lead, numberId) {
   return false;
 }
 
+/**
+ * Marca como contatado todo lead com quem você JÁ TEM conversa no WhatsApp (mesmo que o contato
+ * tenha sido feito fora do robô ou numa versão antiga). `chatIds` = ids das conversas ("5581...@c.us").
+ */
+export function markExistingChats(chatIds) {
+  const ids = new Set(chatIds);
+  const rows = getDb()
+    .prepare(`SELECT id, phone FROM leads WHERE phone IS NOT NULL AND status IN ('novo', 'qualificado', 'descartado', 'sem_whatsapp')`)
+    .all();
+  let n = 0;
+  for (const { id, phone } of rows) {
+    // Contas antigas de celular do Brasil às vezes aparecem sem o 9 depois do DDD
+    const variants = [phone, phone.length === 13 && phone[4] === '9' ? phone.slice(0, 4) + phone.slice(5) : null];
+    if (variants.some((v) => v && ids.has(`${v}@c.us`))) {
+      updateLead(id, { status: 'contatado', channel: 'whatsapp_existente', sent_at: new Date().toISOString() });
+      n++;
+    }
+  }
+  return n;
+}
+
 export async function verifyNumbers({ limit = 300, visible = false } = {}) {
+  const client = await startWhatsApp({ visible });
+  const chats = await client.getChats().catch(() => []);
+  const known = markExistingChats(chats.filter((c) => !c.isGroup).map((c) => c.id._serialized));
+  if (known) log(`💬 ${known} leads já tinham conversa com você no WhatsApp: marcados como contatados (saem do painel).`);
+
   const leads = pendingChecks(limit);
   if (!leads.length) {
-    log('Nenhum número para verificar. Rode a busca primeiro.');
+    log('Nenhum número novo para verificar. Rode a busca primeiro.');
+    await client.destroy().catch(() => {});
     return;
   }
   log(`Vou conferir ${leads.length} números (nenhuma mensagem é enviada).`);
-  const client = await startWhatsApp({ visible });
   process.on('SIGINT', async () => {
     log('Encerrando...');
     await client.destroy().catch(() => {});
