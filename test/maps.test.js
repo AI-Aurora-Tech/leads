@@ -14,6 +14,10 @@ test('parseCardText lê telefone, nota, avaliações e categoria do card', () =>
   assert.equal(info.address, 'R. do Sol, 10');
   assert.equal(parseCardText('Sem fone\nPadaria · Centro\nFechado ⋅ Abre às 07:00').rawPhone, null);
   assert.equal(parseCardText('X\n5,0(1.234)\nBar · Rua A').reviews, 1234);
+  const en = parseCardText("Joe's\n4.7(1,204)\nPlumber · 12 Main St\nOpen 24 hours · (512) 555-0101", 'en');
+  assert.equal(en.rawPhone, '(512) 555-0101');
+  assert.equal(en.reviews, 1204);
+  assert.equal(en.category, 'Plumber');
 });
 
 // Página falsa no formato da lista do Google Maps, para testar o raspador sem acessar o Google

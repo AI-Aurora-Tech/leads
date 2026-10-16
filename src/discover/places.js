@@ -18,7 +18,7 @@ const FIELDS = [
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function searchPlaces({ query, apiKey, max = 60 }) {
+export async function searchPlaces({ query, apiKey, max = 60, lang = 'pt-BR' }) {
   if (!apiKey) throw new Error('GOOGLE_PLACES_API_KEY não configurada no .env (ou use --fonte maps).');
   const results = [];
   let pageToken;
@@ -32,8 +32,8 @@ export async function searchPlaces({ query, apiKey, max = 60 }) {
       },
       body: JSON.stringify({
         textQuery: query,
-        languageCode: 'pt-BR',
-        regionCode: 'BR',
+        languageCode: lang === 'en' ? 'en' : 'pt-BR',
+        ...(lang === 'en' ? {} : { regionCode: 'BR' }),
         pageSize: 20,
         ...(pageToken ? { pageToken } : {}),
       }),

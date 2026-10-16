@@ -8,6 +8,7 @@ import { getDb, insertLead, leadsToday, markSearch, panelLeads, searchDone, upda
 import { startPanelServer } from './server.js';
 import { normalizePhone, formatPhone } from './phone.js';
 import { analyzeSite, scoreLead, socialHost } from './qualify.js';
+import { findEmail } from './email.js';
 import { buildMessage, buildMessageAI } from './message.js';
 import { leadToCard, manualMessage, renderPanel, waLink } from './panel.js';
 
@@ -31,9 +32,11 @@ Uso: node src/cli.js <comando> [opções]   (ou: npm run <comando> -- [opções]
                pergunta se quer +50 ou encerrar e, ao encerrar, abre o painel com os leads do dia
                em http://localhost:4000. Pode rodar várias vezes no dia: cada vez traz leads novos.
                  --meta 50                 leads por rodada (0 = sem limite; padrão: busca.leadsPorDia)
+                 --internacional           empresas de países de língua inglesa, com e-mail (contato por e-mail)
                (aceita as opções do buscar; vários valores separados por ";")
 
   painel       Abre o painel de leads (http://localhost:4000) com botão "Abrir no WhatsApp".
+                 --internacional           abre direto nos leads de e-mail
                O que você marca como contatado fica salvo no banco do robô.
                  --arquivo leads.html      gera um HTML solto em vez do painel
 
@@ -82,6 +85,7 @@ const { positionals, values } = parseArgs({
     canal: { type: 'string' },
     para: { type: 'string' },
     meta: { type: 'string' },
+    internacional: { type: 'boolean' },
     template: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
   },
@@ -143,19 +147,25 @@ const commands = {
     // Vários valores separados por ";" — ex.: --termo "padaria;barbearia" --cidade "Campinas, SP;Sumaré, SP"
     const list = (v) => v.split(';').map((x) => x.trim()).filter(Boolean);
     const todos = (v) => !v || /^(todos|todas|tudo|all|\*)$/i.test(v.trim());
-    const termos = todos(values.termo) ? config.busca.nichos : list(values.termo);
-    const cidades = values.cidade ? list(values.cidade) : config.busca.cidades;
-    const max = Number(values.max || (source === 'maps' ? config.busca.maxPorBuscaNavegador : config.busca.maxPorBusca));
+    // Internacional: nichos e cidades em inglês, busca em inglês, contato por e-mail
+    const intl = values.internacional;
+    const base = intl ? config.internacional : config.busca;
+    const lang = intl ? 'en' : undefined;
+    const termos = todos(values.termo) ? base.nichos : list(values.termo);
+    const cidades = values.cidade ? list(values.cidade) : base.cidades;
+    const max = Number(values.max || (source === 'maps' ? base.maxPorBuscaNavegador : config.busca.maxPorBusca));
     console.log(`${termos.length} nicho(s) × ${cidades.length} cidade(s), até ${max} empresas por busca (fonte: ${source}).`);
 
     // Ordem embaralhada (sempre a mesma) para trazer leads variados do Brasil todo desde o começo
     const combos = shuffle(cidades.flatMap((cidade) => termos.map((termo) => ({ cidade, termo }))));
-    const pending = values.refazer ? combos : combos.filter(({ cidade, termo }) => !searchDone(`${termo} em ${cidade}`));
+    const pending = values.refazer
+      ? combos
+      : combos.filter(({ cidade, termo }) => !searchDone(intl ? `${termo} in ${cidade}` : `${termo} em ${cidade}`));
     if (pending.length < combos.length) console.log(`↷ ${combos.length - pending.length} buscas já feitas antes foram puladas.`);
 
     let totalNew = 0;
     for (const [i, { cidade, termo }] of pending.entries()) {
-      const query = `${termo} em ${cidade}`;
+      const query = intl ? `${termo} in ${cidade}` : `${termo} em ${cidade}`;
       process.stdout.write(`[${i + 1}/${pending.length}] 🔎 ${query} `);
       try {
         const found = await search({
@@ -163,15 +173,17 @@ const commands = {
           apiKey: env.placesKey,
           max,
           headless: !values.visivel,
+          lang,
           onProgress: () => process.stdout.write('.'),
         });
         process.stdout.write(' ');
         let added = 0;
         let noPhone = 0;
         for (const p of found) {
-          const phone = normalizePhone(p.rawPhone);
-          if (!phone) noPhone++;
-          if (insertLead({ ...p, phone: phone?.e164, phoneType: phone?.type, city: cidade, query })) added++;
+          // No internacional o telefone fica só como informação (o contato é por e-mail)
+          const phone = intl ? null : normalizePhone(p.rawPhone);
+          if (!intl && !phone) noPhone++;
+          if (insertLead({ ...p, phone: phone?.e164, phoneType: phone?.type, city: cidade, query, lang })) added++;
         }
         if (found.length) markSearch(query, source, found.length); // vazio = tenta de novo na próxima vez
         totalNew += added;
@@ -200,7 +212,10 @@ const commands = {
   async qualificar({ quiet = false } = {}) {
     const db = getDb();
     const rows = db
-      .prepare(`SELECT * FROM leads WHERE status ${values.todos ? "IN ('novo', 'qualificado', 'descartado')" : "= 'novo'"} AND phone IS NOT NULL`)
+      .prepare(
+        `SELECT * FROM leads WHERE status ${values.todos ? "IN ('novo', 'qualificado', 'descartado')" : "= 'novo'"}
+           AND (phone IS NOT NULL OR lang = 'en')`,
+      )
       .all();
     if (!quiet) console.log(`Analisando ${rows.length} leads...`);
     const minScore = config.qualificacao.scoreMinimo;
@@ -208,11 +223,22 @@ const commands = {
     const queue = [...rows];
     const worker = async () => {
       for (let lead; (lead = queue.shift()); ) {
-        const site = lead.website && !socialHost(lead.website) ? await analyzeSite(lead.website, config.qualificacao.timeoutSiteMs) : null;
+        const en = lead.lang === 'en';
+        const timeout = config.qualificacao.timeoutSiteMs;
+        const site = lead.website && !socialHost(lead.website) ? await analyzeSite(lead.website, timeout, { lang: en ? 'en' : 'pt-BR' }) : null;
         const { score, reasons } = scoreLead(lead, site);
-        const status = score >= minScore ? 'qualificado' : 'descartado';
+        const fields = { score, reasons: JSON.stringify(reasons) };
+        let status = score >= (en ? config.internacional.scoreMinimo : minScore) ? 'qualificado' : 'descartado';
+        if (en) {
+          // Internacional: sem e-mail não há como contatar; e-mail repetido = empresa já está no banco
+          const email = lead.email || (site?.ok ? await findEmail(site.finalUrl || lead.website, { homeHtml: site.html, timeoutMs: timeout }) : null);
+          const taken = email && getDb().prepare('SELECT 1 FROM leads WHERE email = ? AND id != ?').get(email, lead.id);
+          if (!email || taken) status = 'descartado';
+          else fields.email = email;
+          reasons.semEmail = !email || undefined;
+        }
         if (status === 'qualificado') ok++;
-        updateLead(lead.id, { score, reasons: JSON.stringify(reasons), status });
+        updateLead(lead.id, { ...fields, reasons: JSON.stringify(reasons), status });
         if (!quiet) console.log(`  ${String(score).padStart(3)}  ${reasons.kind.padEnd(14)} ${lead.name}`);
       }
     };
@@ -263,8 +289,10 @@ const commands = {
     let url = 'http://localhost:4000/';
     try {
       ({ url } = await startPanelServer(config, { port: 4000 }));
+      if (values.internacional) url += '?canal=email';
     } catch (err) {
       if (err.code !== 'EADDRINUSE') throw err;
+      if (values.internacional) url += '?canal=email';
       console.log(`🌐 O painel já está aberto em outra janela do robô: ${url}`);
       wait = false;
     }
@@ -279,14 +307,17 @@ const commands = {
   // Ao encerrar, abre o painel (http://localhost:4000) com os leads do dia.
   async gerar() {
     values.todos = false;
-    const meta = Number(values.meta ?? config.busca.leadsPorDia ?? 50);
+    const intl = values.internacional;
+    const meta = Number(values.meta ?? (intl ? config.internacional.leadsPorRodada : config.busca.leadsPorDia) ?? 50);
+    const today = () => leadsToday(intl ? 'en' : undefined);
     // Cada rodada traz `meta` leads novos: dá para rodar de manhã, à tarde e à noite
-    let inicio = leadsToday();
+    let inicio = today();
     let alvo = inicio + meta;
-    const novos = () => leadsToday() - inicio;
-    const done = () => meta > 0 && leadsToday() >= alvo;
+    const novos = () => today() - inicio;
+    const done = () => meta > 0 && today() >= alvo;
+    if (intl) console.log('🌎 Modo internacional: empresas dos EUA, Reino Unido, Canadá, Austrália, Irlanda e Nova Zelândia, com e-mail.');
     if (inicio) console.log(`📋 Hoje você já tem ${inicio} leads. Vou buscar mais ${meta > 0 ? meta : 'sem limite'}.`);
-    else if (meta > 0) console.log(`🎯 Meta: ${meta} leads novos (celulares qualificados).`);
+    else if (meta > 0) console.log(`🎯 Meta: ${meta} leads novos (${intl ? 'com e-mail encontrado no site' : 'celulares qualificados'}).`);
     const refresh = async () => {
       await commands.qualificar({ quiet: true });
       console.log(`   ↳ ${meta > 0 ? `${novos()}/${meta}` : novos()} leads novos nesta rodada`);
@@ -299,13 +330,13 @@ const commands = {
         console.log('\n✅ Todas as buscas foram feitas.');
         break;
       }
-      console.log(`\n🎉 ${novos()} leads novos prontos (${leadsToday()} hoje no total).`);
+      console.log(`\n🎉 ${novos()} leads novos prontos (${today()} hoje no total).`);
       if (!(await askMore(meta))) break;
-      inicio = leadsToday();
+      inicio = today();
       alvo = inicio + meta;
       console.log(`\n🔎 Buscando mais ${meta}...`);
     }
-    console.log(`📋 Abrindo o painel com os ${leadsToday()} leads de hoje.`);
+    console.log(`📋 Abrindo o painel com os ${today()} leads de hoje.`);
     await commands.painel();
   },
 

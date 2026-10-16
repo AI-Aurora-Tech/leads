@@ -14,7 +14,9 @@ export function startPanelServer(config, { port = 4000, log = console.log } = {}
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/total') {
-      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ total: panelLeads().length }));
+      const email = url.searchParams.get('canal') === 'email';
+      const total = panelLeads().filter((l) => (l.lang === 'en') === email).length;
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ total }));
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/contatado') {

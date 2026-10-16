@@ -4,7 +4,7 @@
 
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT } from '../config.js';
+import { DATA_DIR } from '../config.js';
 import { launchBrowser } from '../browser.js';
 
 export { BrowserMissingError } from '../browser.js';
@@ -20,18 +20,20 @@ export class MapsBlockedError extends Error {
 
 const PHONE_RE = /(?:\+?55\s?)?\(?0?\d{2}\)?[\s-]?9?\d{4}[\s-]?\d{4}/;
 
+const INTL_PHONE_RE = /\+\d[\d\s().-]{7,16}\d/;
+
 /** Extrai telefone, nota, avaliações e categoria do texto de um card da lista do Maps. */
-export function parseCardText(text = '') {
+export function parseCardText(text = '', lang = 'pt-BR') {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-  const phone = text.match(PHONE_RE)?.[0] ?? null;
-  const rr = text.match(/(\d[,.]\d)\s*\(([\d.]+)\)/);
-  const infoLine = lines.find((l) => l.includes('·') && !/^(aberto|fechado|abre|fecha|aberto 24)/i.test(l));
+  const phone = (lang === 'en' ? text.match(INTL_PHONE_RE) || text.match(/\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}/) : text.match(PHONE_RE))?.[0] ?? null;
+  const rr = text.match(/(\d[,.]\d)\s*\(([\d.,]+)\)/);
+  const infoLine = lines.find((l) => l.includes('·') && !/^(aberto|fechado|abre|fecha|open|closed|opens|closes)/i.test(l));
   const category = infoLine ? infoLine.split('·')[0].trim() || null : null;
   const address = infoLine ? infoLine.split('·').slice(1).join('·').trim() || null : null;
   return {
     rawPhone: phone,
     rating: rr ? Number(rr[1].replace(',', '.')) : null,
-    reviews: rr ? Number(rr[2].replace(/\./g, '')) : 0,
+    reviews: rr ? Number(rr[2].replace(/[.,]/g, '')) : 0,
     category,
     address,
   };
@@ -49,7 +51,7 @@ async function getBrowser(headless) {
   browserHeadless = headless;
   browserPromise = launchBrowser({
     headless,
-    args: ['--lang=pt-BR', '--no-sandbox', '--disable-setuid-sandbox', '--window-size=1280,900'],
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1280,900'],
   });
   return browserPromise;
 }
@@ -74,8 +76,8 @@ async function checkBlocked(page) {
 
 async function saveDebug(page) {
   try {
-    mkdirSync(join(ROOT, 'data'), { recursive: true });
-    const file = join(ROOT, 'data', 'debug-maps.png');
+    mkdirSync(DATA_DIR, { recursive: true });
+    const file = join(DATA_DIR, 'debug-maps.png');
     await page.screenshot({ path: file });
     return file;
   } catch {
@@ -95,14 +97,15 @@ export async function searchMaps({
   timeLimitMs = 180000,
   maxDetails = 5,
   baseUrl = process.env.MAPS_BASE_URL || 'https://www.google.com', // trocável para testes
+  lang = 'pt-BR', // 'en' para a busca internacional
 }) {
   const deadline = Date.now() + timeLimitMs;
   const browser = await getBrowser(headless);
   const page = await browser.newPage();
   page.setDefaultTimeout(30000);
   try {
-    await page.setExtraHTTPHeaders({ 'Accept-Language': 'pt-BR,pt;q=0.9' });
-    await page.goto(`${baseUrl}/maps/search/${encodeURIComponent(query)}?hl=pt-BR`, {
+    await page.setExtraHTTPHeaders({ 'Accept-Language': lang === 'en' ? 'en-US,en;q=0.9' : 'pt-BR,pt;q=0.9' });
+    await page.goto(`${baseUrl}/maps/search/${encodeURIComponent(query)}?hl=${lang === 'en' ? 'en' : 'pt-BR'}`, {
       waitUntil: 'domcontentloaded',
       timeout: 45000,
     });
@@ -158,7 +161,7 @@ export async function searchMaps({
     let details = 0;
     for (const c of cards.slice(0, max)) {
       if (!c.name) continue;
-      const info = parseCardText(c.text);
+      const info = parseCardText(c.text, lang);
       let place = {
         ...info,
         name: c.name,
@@ -167,8 +170,9 @@ export async function searchMaps({
         mapsUrl: c.href,
         source: 'maps',
       };
-      // Sem telefone na lista: abre a ficha (poucas por busca, para não demorar)
-      if (!place.rawPhone && details < maxDetails && Date.now() < deadline) {
+      // Faltou o que importa (telefone no Brasil, site no internacional): abre a ficha (poucas por busca)
+      const missing = lang === 'en' ? !place.website : !place.rawPhone;
+      if (missing && details < maxDetails && Date.now() < deadline) {
         details++;
         try {
           const detail = await browser.newPage();
@@ -207,7 +211,7 @@ async function readPlace(page) {
       name: txt('h1'),
       rawPhone: phoneId ? phoneId.replace('phone:tel:', '') : null,
       website: attr('a[data-item-id="authority"]', 'href'),
-      address: attr('button[data-item-id="address"]', 'aria-label')?.replace(/^Endereço:\s*/, '') || null,
+      address: attr('button[data-item-id="address"]', 'aria-label')?.replace(/^(Endereço|Address):\s*/, '') || null,
       category: txt('button[jsaction*="category"]'),
       rating: parseFloat((ratingLabel.match(/[\d,]+/) || [''])[0].replace(',', '.')) || null,
       reviews: reviewsMatch ? Number(reviewsMatch[1].replace(/\./g, '')) : 0,

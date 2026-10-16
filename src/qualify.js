@@ -35,8 +35,8 @@ export function socialHost(url) {
   return null;
 }
 
-/** Baixa o site e devolve sinais técnicos. Nunca lança erro. */
-export async function analyzeSite(url, timeoutMs = 10000) {
+/** Baixa o site e devolve sinais técnicos (e o HTML, para achar e-mail). Nunca lança erro. */
+export async function analyzeSite(url, timeoutMs = 10000, { lang = 'pt-BR' } = {}) {
   const started = Date.now();
   try {
     const res = await fetch(url, {
@@ -45,10 +45,11 @@ export async function analyzeSite(url, timeoutMs = 10000) {
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36',
-        'Accept-Language': 'pt-BR,pt;q=0.9',
+        'Accept-Language': lang === 'en' ? 'en' : 'pt-BR,pt;q=0.9',
       },
     });
-    const html = (await res.text()).slice(0, 500_000).toLowerCase();
+    const raw = (await res.text()).slice(0, 500_000);
+    const html = raw.toLowerCase();
     const loadMs = Date.now() - started;
     const years = [...html.matchAll(/(?:©|&copy;|copyright)[^0-9]{0,40}((?:19|20)\d{2})(?:\s*[-–]\s*((?:19|20)\d{2}))?/g)].map(
       (m) => Number(m[2] || m[1]),
@@ -64,6 +65,7 @@ export async function analyzeSite(url, timeoutMs = 10000) {
       hasChat: CHAT_MARKERS.some((m) => html.includes(m)),
       copyrightYear: years.length ? Math.max(...years) : null,
       tooSmall: html.length < 3000,
+      html: raw,
     };
   } catch (err) {
     return { ok: false, error: err.name === 'TimeoutError' ? 'timeout' : err.message, loadMs: Date.now() - started };

@@ -33,9 +33,19 @@ function isToday(createdAt, now = new Date()) {
   return new Date(`${createdAt.replace(' ', 'T')}Z`).toDateString() === now.toDateString();
 }
 
+/** E-mail para leads internacionais: assunto e corpo de config.internacional. */
+export function emailMessage(lead, config) {
+  const vars = { nome: shortName(lead.name), cidade: lead.city || '', categoria: (lead.category || '').toLowerCase() };
+  return { assunto: renderTemplate(config.internacional.assunto, vars), corpo: renderTemplate(config.internacional.email, vars) };
+}
+
 export function leadToCard(lead, config) {
   const reasons = lead.reasons ? JSON.parse(lead.reasons) : {};
+  const email = lead.lang === 'en' ? emailMessage(lead, config) : null;
   return {
+    canal: email ? 'email' : 'whatsapp',
+    email: lead.email || '',
+    assunto: email?.assunto || '',
     id: lead.id,
     nome: lead.name,
     nomeCurto: shortName(lead.name),
@@ -43,7 +53,7 @@ export function leadToCard(lead, config) {
     cidade: lead.city || '',
     endereco: lead.address || '',
     telefone: lead.phone,
-    telefoneFmt: formatPhone(lead.phone),
+    telefoneFmt: lead.phone ? formatPhone(lead.phone) : lead.raw_phone || '',
     tipoTelefone: lead.phone_type,
     site: lead.website || '',
     maps: lead.maps_url || '',
@@ -53,7 +63,7 @@ export function leadToCard(lead, config) {
     tipo: reasons.kind || '',
     tipoLabel: KIND_LABEL[reasons.kind] || '',
     problemas: reasons.problems || [],
-    mensagem: manualMessage(lead, config),
+    mensagem: email ? email.corpo : manualMessage(lead, config),
     contatado: lead.status === 'contatado',
     whatsapp: lead.wa_check === 1 ? 'sim' : lead.wa_check === 0 ? 'nao' : '',
     hoje: isToday(lead.created_at),
@@ -102,6 +112,11 @@ export function renderPanel(cards, { title = 'Leads AuroraTech', generatedAt = n
   .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; align-items:center; }
   .btn { display:inline-flex; align-items:center; gap:6px; padding:10px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--text); font:inherit; font-weight:600; cursor:pointer; text-decoration:none; }
   .btn.wa { background:var(--wa); border-color:var(--wa); color:#fff; }
+  .btn.mail { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .subj { width:100%; margin-bottom:6px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; font-size:14px; }
+  .tabs { display:flex; gap:8px; margin-bottom:8px; }
+  .tabs a { padding:6px 12px; border-radius:999px; border:1px solid var(--line); color:var(--text); text-decoration:none; font-size:14px; }
+  .tabs a.on { background:var(--accent); border-color:var(--accent); color:#fff; }
   .actions label { margin-left:auto; display:flex; align-items:center; gap:6px; color:var(--muted); font-size:14px; }
   .empty { text-align:center; color:var(--muted); padding:40px 0; }
 </style>
@@ -109,6 +124,7 @@ export function renderPanel(cards, { title = 'Leads AuroraTech', generatedAt = n
 <body>
 <header>
   <h1>${title} <small>· gerado em ${when}</small></h1>
+  <nav class="tabs"><a href="?" id="tabWa">💬 WhatsApp (Brasil)</a><a href="?canal=email" id="tabEmail">✉️ E-mail (internacional)</a></nav>
   <div class="filters">
     <input type="search" id="q" placeholder="Buscar nome, nicho, cidade...">
     <select id="tipo"><option value="">Todos os motivos</option>${Object.entries(KIND_LABEL)
@@ -117,7 +133,7 @@ export function renderPanel(cards, { title = 'Leads AuroraTech', generatedAt = n
     <select id="cat"><option value="">Todos os nichos</option></select>
     <label><input type="checkbox" id="hoje" checked> Só os de hoje</label>
     <label><input type="checkbox" id="hide" checked> Ocultar contatados</label>
-    <label><input type="checkbox" id="cel" checked> Só celular</label>
+    <label id="celLabel"><input type="checkbox" id="cel" checked> Só celular</label>
     <label id="verifLabel" hidden><input type="checkbox" id="verif"> Só WhatsApp verificado</label>
   </div>
   <div class="stats" id="stats"></div>
@@ -125,26 +141,31 @@ export function renderPanel(cards, { title = 'Leads AuroraTech', generatedAt = n
 </header>
 <main id="list"></main>
 <script>
-const LEADS = ${data};
+const CANAL = new URLSearchParams(location.search).get('canal') === 'email' ? 'email' : 'whatsapp';
+const LEADS = ${data}.filter((l) => l.canal === CANAL);
 const KEY = 'aurora-leads-contatados';
 // Aberto pelo robô (http://localhost): "contatado" fica salvo no banco do robô e nunca se perde.
 // Aberto como arquivo: fica salvo só neste navegador.
 const SERVER = location.protocol.startsWith('http');
+// Com o robô, o banco é a única fonte: o que ficou no navegador de outra versão não se mistura
+// (os números dos leads mudam entre bancos e marcariam a empresa errada).
 let done = {};
-try { done = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch {}
+if (!SERVER) try { done = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch {}
 for (const l of LEADS) if (l.contatado) done[l.id] = done[l.id] || true;
 const save = (id) => {
-  try { localStorage.setItem(KEY, JSON.stringify(done)); } catch {}
+  if (!SERVER) try { localStorage.setItem(KEY, JSON.stringify(done)); } catch {}
   if (SERVER && id != null) {
     fetch('api/contatado', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: Number(id), contatado: Boolean(done[id]) }) }).catch(() => {});
   }
 };
+document.getElementById(CANAL === 'email' ? 'tabEmail' : 'tabWa').classList.add('on');
+if (CANAL === 'email') document.getElementById('celLabel').hidden = true;
 if (LEADS.some((l) => l.whatsapp)) document.getElementById('verifLabel').hidden = false;
 if (SERVER) {
   // Avisa quando o robô encontrar leads novos
   setInterval(async () => {
     try {
-      const r = await (await fetch('api/total')).json();
+      const r = await (await fetch('api/total?canal=' + CANAL)).json();
       if (r.total !== LEADS.length) {
         if (!LEADS.length) location.reload(); // primeiros leads: mostra direto
         else document.getElementById('novos').hidden = false;
@@ -155,6 +176,7 @@ if (SERVER) {
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const wa = (phone, text) => 'https://wa.me/' + phone + '?text=' + encodeURIComponent(text);
+const gmail = (to, su, body) => 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(to) + '&su=' + encodeURIComponent(su) + '&body=' + encodeURIComponent(body);
 
 for (const c of [...new Set(LEADS.map((l) => l.categoria).filter(Boolean))].sort()) {
   $('cat').insertAdjacentHTML('beforeend', '<option>' + esc(c) + '</option>');
@@ -170,7 +192,7 @@ function render() {
   const rows = LEADS.filter((l) =>
     (!$('hoje').checked || l.hoje) &&
     (!$('hide').checked || !done[l.id]) &&
-    (!$('cel').checked || l.tipoTelefone === 'celular' || l.whatsapp === 'sim') &&
+    (CANAL === 'email' || !$('cel').checked || l.tipoTelefone === 'celular' || l.whatsapp === 'sim') &&
     (!$('verif').checked || l.whatsapp === 'sim') &&
     (!$('tipo').value || l.tipo === $('tipo').value) &&
     (!$('cat').value || l.categoria === $('cat').value) &&
@@ -187,7 +209,9 @@ function render() {
       </div>
       <div class="tags">
         \${l.tipoLabel ? '<span class="tag k">' + esc(l.tipoLabel) + '</span>' : ''}
-        <span class="tag">📞 \${esc(l.telefoneFmt)} · \${l.tipoTelefone === 'celular' ? 'celular' : 'fixo'}</span>
+        \${l.canal === 'email'
+          ? '<span class="tag">✉️ ' + esc(l.email) + '</span>' + (l.telefoneFmt ? '<span class="tag">📞 ' + esc(l.telefoneFmt) + '</span>' : '')
+          : '<span class="tag">📞 ' + esc(l.telefoneFmt) + ' · ' + (l.tipoTelefone === 'celular' ? 'celular' : 'fixo') + '</span>'}
         \${l.whatsapp === 'sim' ? '<span class="tag">✅ WhatsApp verificado</span>' : ''}
       </div>
       \${l.problemas.length ? '<ul class="prob">' + l.problemas.map((p) => '<li>' + esc(p) + '</li>').join('') + '</ul>' : ''}
@@ -196,9 +220,12 @@ function render() {
         \${l.maps ? '<a href="' + esc(l.maps) + '" target="_blank" rel="noopener">Google Maps</a>' : ''}
         \${l.endereco ? '<span class="meta">' + esc(l.endereco) + '</span>' : ''}
       </div>
+      \${l.canal === 'email' ? '<input class="subj" value="' + esc(l.assunto) + '" aria-label="Assunto">' : ''}
       <textarea>\${esc(l.mensagem)}</textarea>
       <div class="actions">
-        <a class="btn wa" href="#" data-act="wa">💬 Abrir no WhatsApp</a>
+        \${l.canal === 'email'
+          ? '<a class="btn mail" href="#" data-act="gmail">✉️ Abrir no Gmail</a><a class="btn" href="#" data-act="mailto">Abrir no app de e-mail</a>'
+          : '<a class="btn wa" href="#" data-act="wa">💬 Abrir no WhatsApp</a>'}
         <button class="btn" data-act="copy">Copiar mensagem</button>
         <label><input type="checkbox" data-act="done" \${done[l.id] ? 'checked' : ''}> Contatado</label>
       </div>
@@ -211,9 +238,11 @@ $('list').addEventListener('click', async (e) => {
   const card = el.closest('.card');
   const lead = LEADS.find((l) => String(l.id) === card.dataset.id);
   const text = card.querySelector('textarea').value;
-  if (el.dataset.act === 'wa') {
+  const subject = card.querySelector('.subj')?.value || '';
+  const open = { wa: () => wa(lead.telefone, text), gmail: () => gmail(lead.email, subject, text), mailto: () => 'mailto:' + lead.email + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(text) }[el.dataset.act];
+  if (open) {
     e.preventDefault();
-    window.open(wa(lead.telefone, text), '_blank');
+    if (el.dataset.act === 'mailto') location.href = open(); else window.open(open(), '_blank');
     done[lead.id] = new Date().toISOString(); save(lead.id);
     card.classList.add('done'); card.querySelector('[data-act=done]').checked = true;
     updateStats();

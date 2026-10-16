@@ -27,7 +27,12 @@ if [ -f config.json ] && grep -q '"aurora_prospeccao"' config.json; then
   mv config.json config.antigo.json
   echo "ℹ️  Configuração antiga guardada em config.antigo.json (agora o robô usa a configuração nova)."
 fi
-[ -f .env ] || cp .env.example .env
+# Chaves (.env) ficam na pasta fixa de dados, que não se perde ao baixar uma versão nova
+DADOS="${LEADS_DATA_DIR:-$HOME/AuroraLeads}"
+mkdir -p "$DADOS"
+if [ ! -f "$DADOS/.env" ]; then
+  if [ -f .env ]; then cp .env "$DADOS/.env"; else cp .env.example "$DADOS/.env"; fi
+fi
 
 # Navegador: usa o Google Chrome do Mac; se não houver, tenta baixar um
 if ! npm run --silent navegador; then
