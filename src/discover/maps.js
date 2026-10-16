@@ -94,7 +94,7 @@ export async function searchMaps({
   onProgress = () => {},
   timeLimitMs = 180000,
   maxDetails = 5,
-  baseUrl = 'https://www.google.com',
+  baseUrl = process.env.MAPS_BASE_URL || 'https://www.google.com', // trocável para testes
 }) {
   const deadline = Date.now() + timeLimitMs;
   const browser = await getBrowser(headless);

@@ -37,29 +37,35 @@ a mensagem padrão da Aurora Tech escrita. Você só aperta enviar.
    bash "Gerar Leads.command"
    ```
 
-Pronto, ele não pergunta nada. Ele instala o que precisa (na primeira vez), confere o navegador e começa a buscar.
-Para cada empresa encontrada aparece um ponto `.` e, depois de cada busca, a contagem do dia (ex.: `12/50 leads de hoje`).
+Ele instala o que precisa (na primeira vez), confere o navegador e começa a buscar.
+Para cada empresa encontrada aparece um ponto `.` e, depois de cada busca, o andamento (ex.: `12/50 leads novos nesta rodada`).
 
-**Quando ele chega a 50 leads novos no dia** (celulares, já analisados), para de buscar e **só então abre o painel**
-no navegador (endereço `http://localhost:4000`), com o botão para chamar cada um no WhatsApp.
+**Quando chega a 50 leads novos** (celulares, já analisados), ele pergunta:
 
-> ⏱️ Sem chave do Google, juntar os 50 leads leva de 30 minutos a 1 hora (com a chave do passo 7 é bem mais rápido).
-> Se rodar de novo no mesmo dia, ele vê que a meta já foi batida e abre o painel direto. No dia seguinte busca mais 50,
-> continuando de onde parou, sem repetir empresa.
->
-> Quer outra quantidade? `bash "Gerar Leads.command" --meta 80` (ou `--meta 0` para buscar sem parar).
+```
+👉 Quer mais 50 leads? Digite S para +50 ou N para encerrar e abrir o painel:
+```
+
+- **S** + Enter: busca mais 50 e pergunta de novo no final.
+- **N** + Enter: para de buscar e **abre o painel** no navegador (`http://localhost:4000`) com os **leads do dia**.
+
+**Dá para rodar várias vezes no mesmo dia** (de manhã, no meio do dia, no fim do dia). Cada vez ele busca **50 leads novos**,
+continua de onde parou e nunca repete empresa. O painel mostra todos os leads do dia, de todas as rodadas.
+
+> ⏱️ Sem chave do Google, cada rodada de 50 leads deve levar de 30 minutos a 1 hora (com a chave do passo 7 é bem mais rápido).
+> Outra quantidade por rodada: `bash "Gerar Leads.command" --meta 30`.
 > **Para parar antes:** `Ctrl + C`. Deixe a janela do Terminal aberta enquanto usa o painel.
 
 Avisos amarelos do `npm` (`deprecated`, `vulnerabilities`, `install-scripts blocked`) são normais.
 
 ## 4. Use o painel
 
-Leads de dias anteriores que você ainda não contatou continuam lá.
+Por padrão aparecem só os leads **de hoje**. Desmarque **Só os de hoje** para ver também os de dias anteriores que você ainda não contatou.
 Cada empresa aparece com pontuação, motivo (sem site, só Instagram, site com problemas…), telefone, avaliação,
 links do site e do Google Maps, e a **mensagem padrão** pronta (dá para editar antes de enviar).
 
 - **💬 Abrir no WhatsApp**: abre a conversa com a mensagem escrita. O lead fica marcado como **Contatado**, e isso fica salvo no robô.
-- Filtros: busca por nome/cidade, motivo, nicho, **só celular** (ligado por padrão) e **só WhatsApp verificado**.
+- Filtros: busca por nome/cidade, motivo, nicho, **só os de hoje**, **só celular** (ligado por padrão) e **só WhatsApp verificado**.
 
 💡 Instale o **WhatsApp para Mac** (App Store) para o botão abrir direto no app.
 

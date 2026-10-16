@@ -28,3 +28,12 @@ test('painel usa a mensagem padrão do config (templates.manual)', () => {
   assert.match(card.mensagem, /www\.auroratech\.app\.br/);
   assert.match(waLink(card.telefone, card.mensagem), /^https:\/\/wa\.me\/5581999990009\?text=Ol%C3%A1!%20/);
 });
+
+test('painel marca os leads de hoje (filtro "Só os de hoje")', () => {
+  const config = loadConfig();
+  const lead = { id: 1, name: 'Padaria X', phone: '5581999990001', phone_type: 'celular' };
+  const agoraUtc = new Date().toISOString().slice(0, 19).replace('T', ' '); // formato do SQLite
+  assert.equal(leadToCard({ ...lead, created_at: agoraUtc }, config).hoje, true);
+  assert.equal(leadToCard({ ...lead, created_at: '2020-01-01 12:00:00' }, config).hoje, false);
+  assert.match(renderPanel([]), /id="hoje" checked/);
+});

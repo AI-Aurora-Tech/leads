@@ -27,10 +27,10 @@ Uso: node src/cli.js <comando> [opções]   (ou: npm run <comando> -- [opções]
   qualificar   Analisa site/telefone de cada lead novo e calcula o score
                  --todos                   reanalisa também os já qualificados
 
-  gerar        Faz tudo: busca no Brasil todo até ter os leads do dia (padrão: 50 celulares
-               qualificados), e só então abre o painel em http://localhost:4000.
-               Se a meta de hoje já foi batida, abre o painel direto.
-                 --meta 50                 leads por dia (0 = sem limite; padrão: busca.leadsPorDia)
+  gerar        Faz tudo: busca no Brasil todo até ter 50 leads novos (celulares qualificados),
+               pergunta se quer +50 ou encerrar e, ao encerrar, abre o painel com os leads do dia
+               em http://localhost:4000. Pode rodar várias vezes no dia: cada vez traz leads novos.
+                 --meta 50                 leads por rodada (0 = sem limite; padrão: busca.leadsPorDia)
                (aceita as opções do buscar; vários valores separados por ";")
 
   painel       Abre o painel de leads (http://localhost:4000) com botão "Abrir no WhatsApp".
@@ -113,6 +113,22 @@ function openFile(file) {
     // sem navegador disponível — o caminho do arquivo já foi mostrado
   }
 }
+/** Pergunta no Terminal se quer mais leads. Sem Terminal interativo, encerra. */
+async function askMore(n) {
+  if (!process.stdin.isTTY) return false;
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    for (;;) {
+      const a = (await rl.question(`👉 Quer mais ${n} leads? Digite S para +${n} ou N para encerrar e abrir o painel: `)).trim().toLowerCase();
+      if (/^(s|sim|y|yes|\+|1)/.test(a)) return true;
+      if (/^(n|nao|não|no|2)/.test(a) || a === '') return false;
+    }
+  } finally {
+    rl.close();
+  }
+}
+
 const [cmd, ...args] = positionals;
 
 const commands = {
@@ -259,25 +275,37 @@ const commands = {
     }
   },
 
-  // Busca e qualifica até bater a meta do dia; só então abre o painel (http://localhost:4000).
+  // Busca e qualifica até juntar a meta (50) de leads novos; aí pergunta se quer +50 ou encerrar.
+  // Ao encerrar, abre o painel (http://localhost:4000) com os leads do dia.
   async gerar() {
     values.todos = false;
-    const meta = Number(values.meta ?? config.busca.leadsPorDia ?? 0);
-    const done = () => meta > 0 && leadsToday() >= meta;
-    if (done()) {
-      console.log(`✅ Meta de hoje já batida: ${leadsToday()} leads. Abrindo o painel (amanhã tem mais).`);
-    } else {
-      if (meta > 0) console.log(`🎯 Meta: ${meta} leads hoje (celulares qualificados). Já tenho ${leadsToday()}.`);
-      const refresh = async () => {
-        await commands.qualificar({ quiet: true });
-        console.log(`   ↳ ${meta > 0 ? `${leadsToday()}/${meta} leads de hoje` : `${leadsToday()} leads hoje`}`);
-      };
+    const meta = Number(values.meta ?? config.busca.leadsPorDia ?? 50);
+    // Cada rodada traz `meta` leads novos: dá para rodar de manhã, à tarde e à noite
+    let inicio = leadsToday();
+    let alvo = inicio + meta;
+    const novos = () => leadsToday() - inicio;
+    const done = () => meta > 0 && leadsToday() >= alvo;
+    if (inicio) console.log(`📋 Hoje você já tem ${inicio} leads. Vou buscar mais ${meta > 0 ? meta : 'sem limite'}.`);
+    else if (meta > 0) console.log(`🎯 Meta: ${meta} leads novos (celulares qualificados).`);
+    const refresh = async () => {
+      await commands.qualificar({ quiet: true });
+      console.log(`   ↳ ${meta > 0 ? `${novos()}/${meta}` : novos()} leads novos nesta rodada`);
+    };
+    for (;;) {
       await commands.buscar({ afterEach: refresh, done });
       if (process.exitCode) process.exit(process.exitCode);
-      await refresh();
-      console.log(done() ? `\n🎉 Meta batida: ${leadsToday()} leads de hoje!` : '\n✅ Busca concluída.');
+      await commands.qualificar({ quiet: true });
+      if (!done()) {
+        console.log('\n✅ Todas as buscas foram feitas.');
+        break;
+      }
+      console.log(`\n🎉 ${novos()} leads novos prontos (${leadsToday()} hoje no total).`);
+      if (!(await askMore(meta))) break;
+      inicio = leadsToday();
+      alvo = inicio + meta;
+      console.log(`\n🔎 Buscando mais ${meta}...`);
     }
-    console.log(`📋 ${panelLeads().length} leads esperando contato no painel.`);
+    console.log(`📋 Abrindo o painel com os ${leadsToday()} leads de hoje.`);
     await commands.painel();
   },
 
