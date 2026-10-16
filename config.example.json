@@ -19,6 +19,7 @@
 
   "busca": {
     "leadsPorDia": 50,
+    "estadosPrioritarios": ["SP", "RJ", "MG", "PR", "SC", "RS", "DF"],
     "fonte": "places",
     "maxPorBusca": 60,
     "maxPorBuscaNavegador": 20,
