@@ -14,7 +14,7 @@ Sistema de prospecção automática para a [AuroraTech](https://www.auroratech.a
 > 🍎 **No Mac?** Siga o **[TUTORIAL-MAC.md](TUTORIAL-MAC.md)**: passo a passo do zero, sem precisar saber programar.
 
 ```bash
-bash "Gerar Leads.command"        # busca 50 leads novos, pergunta se quer +50 e, ao encerrar, abre o painel
+bash "Gerar Leads.command"        # 50 leads por rodada: 1) SP/RJ/MG/PR/SC/RS/DF, 2) gringos por e-mail, 3) demais estados
 bash "Gerar Leads Internacional.command"  # EUA, Reino Unido, Canadá, Austrália, Irlanda, NZ: leads com e-mail
 bash "Abrir Painel.command"       # só abre o painel (http://localhost:4000)
 bash "Verificar WhatsApp.command" # confere no WhatsApp Web quais números têm WhatsApp (não envia nada)
@@ -29,6 +29,7 @@ bash "Verificar WhatsApp.command" # confere no WhatsApp Web quais números têm 
 - **Internacional (`--internacional`):** busca em inglês (`internacional.nichos`/`cidades`), acha o e-mail no site
   (página inicial, páginas de contato, mailto, Cloudflare). O painel tem a aba ✉️ E-mail, com botões para o Gmail e o app de e-mail.
 - **Navegador:** usa o Google Chrome/Edge/Brave instalado; se não houver, o Chrome do puppeteer.
+- **Ordem das fases:** `busca.estadosPrioritarios` (SP, RJ, MG, PR, SC, RS, DF) → internacional (e-mail) → demais estados. Só avança quando todas as buscas da fase foram feitas. `--cidade` ou `--internacional` pulam as fases.
 - **Rodadas de 50:** cada execução busca `busca.leadsPorDia` (50) celulares qualificados novos e pergunta se quer +50. Pode rodar várias vezes no dia. Outra quantidade: `--meta 80` (`--meta 0` = sem limite).
 - Opções avançadas: `npm run gerar -- --cidade "Recife, PE" --termo "padaria;barbearia"`.
 

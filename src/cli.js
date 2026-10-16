@@ -28,7 +28,8 @@ Uso: node src/cli.js <comando> [opções]   (ou: npm run <comando> -- [opções]
   qualificar   Analisa site/telefone de cada lead novo e calcula o score
                  --todos                   reanalisa também os já qualificados
 
-  gerar        Faz tudo: busca no Brasil todo até ter 50 leads novos (celulares qualificados),
+  gerar        Faz tudo, em fases: 1) estados prioritários (busca.estadosPrioritarios), 2) empresas de
+               língua inglesa (e-mail), 3) demais estados. Busca até ter 50 leads novos,
                pergunta se quer +50 ou encerrar e, ao encerrar, abre o painel com os leads do dia
                em http://localhost:4000. Pode rodar várias vezes no dia: cada vez traz leads novos.
                  --meta 50                 leads por rodada (0 = sem limite; padrão: busca.leadsPorDia)
@@ -117,6 +118,22 @@ function openFile(file) {
     // sem navegador disponível — o caminho do arquivo já foi mostrado
   }
 }
+/**
+ * Ordem da busca: 1) estados prioritários do Brasil, 2) empresas de língua inglesa (e-mail),
+ * 3) os demais estados do Brasil. Os estados prioritários ficam em busca.estadosPrioritarios.
+ */
+function buildPhases(cfg) {
+  const prio = new Set(cfg.busca.estadosPrioritarios || []);
+  const uf = (c) => c.split(',').at(-1).trim().toUpperCase();
+  const top = cfg.busca.cidades.filter((c) => prio.has(uf(c)));
+  const rest = cfg.busca.cidades.filter((c) => !prio.has(uf(c)));
+  return [
+    top.length && { titulo: `📍 Fase 1: ${[...prio].join(', ')} (${top.length} cidades)`, intl: false, cidades: top },
+    { titulo: '🌎 Fase 2: empresas de países de língua inglesa (contato por e-mail)', intl: true },
+    rest.length && { titulo: `📍 Fase 3: demais estados do Brasil (${rest.length} cidades)`, intl: false, cidades: rest },
+  ].filter(Boolean);
+}
+
 /** Pergunta no Terminal se quer mais leads. Sem Terminal interativo, encerra. */
 async function askMore(n) {
   if (!process.stdin.isTTY) return false;
@@ -136,9 +153,10 @@ async function askMore(n) {
 const [cmd, ...args] = positionals;
 
 const commands = {
-  async buscar({ afterEach, done = () => false } = {}) {
+  /** @returns true se parou por `done` (ainda há buscas a fazer), false se fez todas */
+  async buscar({ afterEach, done = () => false, intl = values.internacional, cidades: onlyCities, quiet = false, titulo } = {}) {
     const fonte = values.fonte || config.busca.fonte;
-    if (fonte === 'places' && !env.placesKey) {
+    if (fonte === 'places' && !env.placesKey && !quiet) {
       console.log('Sem GOOGLE_PLACES_API_KEY no .env — usando --fonte maps (navegador).');
     }
     const source = fonte === 'places' && env.placesKey ? 'places' : 'maps';
@@ -148,19 +166,23 @@ const commands = {
     const list = (v) => v.split(';').map((x) => x.trim()).filter(Boolean);
     const todos = (v) => !v || /^(todos|todas|tudo|all|\*)$/i.test(v.trim());
     // Internacional: nichos e cidades em inglês, busca em inglês, contato por e-mail
-    const intl = values.internacional;
     const base = intl ? config.internacional : config.busca;
     const lang = intl ? 'en' : undefined;
     const termos = todos(values.termo) ? base.nichos : list(values.termo);
-    const cidades = values.cidade ? list(values.cidade) : base.cidades;
+    const cidades = values.cidade ? list(values.cidade) : onlyCities || base.cidades;
     const max = Number(values.max || (source === 'maps' ? base.maxPorBuscaNavegador : config.busca.maxPorBusca));
-    console.log(`${termos.length} nicho(s) × ${cidades.length} cidade(s), até ${max} empresas por busca (fonte: ${source}).`);
 
     // Ordem embaralhada (sempre a mesma) para trazer leads variados do Brasil todo desde o começo
     const combos = shuffle(cidades.flatMap((cidade) => termos.map((termo) => ({ cidade, termo }))));
     const pending = values.refazer
       ? combos
       : combos.filter(({ cidade, termo }) => !searchDone(intl ? `${termo} in ${cidade}` : `${termo} em ${cidade}`));
+    if (!pending.length) {
+      if (!quiet) console.log('✓ Todas as buscas desta lista já foram feitas.');
+      return false;
+    }
+    if (titulo) console.log(`\n${titulo}`);
+    console.log(`${termos.length} nicho(s) × ${cidades.length} cidade(s), até ${max} empresas por busca (fonte: ${source}).`);
     if (pending.length < combos.length) console.log(`↷ ${combos.length - pending.length} buscas já feitas antes foram puladas.`);
 
     let totalNew = 0;
@@ -189,7 +211,10 @@ const commands = {
         totalNew += added;
         console.log(`${found.length} encontrados, ${added} novos${noPhone ? ` (${noPhone} sem telefone brasileiro)` : ''}`);
         if (added && afterEach) await afterEach();
-        if (done()) break;
+        if (done()) {
+          await maps?.closeMapsBrowser();
+          return true;
+        }
       } catch (err) {
         if (err.name === 'MapsBlockedError') {
           // Google pediu captcha: espera e segue (essa busca é refeita numa próxima rodada)
@@ -200,13 +225,14 @@ const commands = {
         if (err.name === 'BrowserMissingError') {
           console.log(`\n\n❌ ${err.message}`);
           process.exitCode = 1;
-          return; // sem navegador nenhuma busca funciona — não adianta tentar as outras
+          return false; // sem navegador nenhuma busca funciona — não adianta tentar as outras
         }
         console.log(`erro: ${err.message.split('\n')[0].slice(0, 160)}`);
       }
     }
     await maps?.closeMapsBrowser();
     console.log(`\n✅ ${totalNew} leads novos.${afterEach ? '' : ' Próximo passo: npm run qualificar'}`);
+    return false;
   },
 
   async qualificar({ quiet = false } = {}) {
@@ -307,24 +333,33 @@ const commands = {
   // Ao encerrar, abre o painel (http://localhost:4000) com os leads do dia.
   async gerar() {
     values.todos = false;
-    const intl = values.internacional;
-    const meta = Number(values.meta ?? (intl ? config.internacional.leadsPorRodada : config.busca.leadsPorDia) ?? 50);
-    const today = () => leadsToday(intl ? 'en' : undefined);
+    const intlOnly = values.internacional;
+    const meta = Number(values.meta ?? (intlOnly ? config.internacional.leadsPorRodada : config.busca.leadsPorDia) ?? 50);
+    // Leads da rodada contam os dois tipos (WhatsApp no Brasil + e-mail no internacional)
+    const today = () => (intlOnly ? 0 : leadsToday()) + leadsToday('en');
+    const phases = values.cidade || intlOnly ? [{ intl: intlOnly }] : buildPhases(config);
     // Cada rodada traz `meta` leads novos: dá para rodar de manhã, à tarde e à noite
     let inicio = today();
+    const inicioEn = leadsToday('en');
     let alvo = inicio + meta;
     const novos = () => today() - inicio;
     const done = () => meta > 0 && today() >= alvo;
-    if (intl) console.log('🌎 Modo internacional: empresas dos EUA, Reino Unido, Canadá, Austrália, Irlanda e Nova Zelândia, com e-mail.');
+    if (intlOnly) console.log('🌎 Modo internacional: empresas dos EUA, Reino Unido, Canadá, Austrália, Irlanda e Nova Zelândia, com e-mail.');
     if (inicio) console.log(`📋 Hoje você já tem ${inicio} leads. Vou buscar mais ${meta > 0 ? meta : 'sem limite'}.`);
-    else if (meta > 0) console.log(`🎯 Meta: ${meta} leads novos (${intl ? 'com e-mail encontrado no site' : 'celulares qualificados'}).`);
+    else if (meta > 0) console.log(`🎯 Meta: ${meta} leads novos.`);
     const refresh = async () => {
       await commands.qualificar({ quiet: true });
       console.log(`   ↳ ${meta > 0 ? `${novos()}/${meta}` : novos()} leads novos nesta rodada`);
     };
+    let fase = 0;
     for (;;) {
-      await commands.buscar({ afterEach: refresh, done });
-      if (process.exitCode) process.exit(process.exitCode);
+      // Fases em ordem: só passa para a próxima quando todas as buscas da atual já foram feitas
+      while (fase < phases.length && !done()) {
+        const ph = phases[fase];
+        const stopped = await commands.buscar({ afterEach: refresh, done, intl: ph.intl, cidades: ph.cidades, quiet: phases.length > 1, titulo: ph.titulo });
+        if (process.exitCode) process.exit(process.exitCode);
+        if (!stopped) fase++;
+      }
       await commands.qualificar({ quiet: true });
       if (!done()) {
         console.log('\n✅ Todas as buscas foram feitas.');
@@ -336,7 +371,10 @@ const commands = {
       alvo = inicio + meta;
       console.log(`\n🔎 Buscando mais ${meta}...`);
     }
-    console.log(`📋 Abrindo o painel com os ${today()} leads de hoje.`);
+    // Abre na aba de e-mail quando os leads de hoje são todos internacionais
+    if (intlOnly || (leadsToday('en') > inicioEn && !leadsToday())) values.internacional = true;
+    const [br, en] = [leadsToday(), leadsToday('en')];
+    console.log(`📋 Abrindo o painel com os leads de hoje: ${br} no WhatsApp${en ? ` e ${en} por e-mail (aba ✉️ E-mail)` : ''}.`);
     await commands.painel();
   },
 

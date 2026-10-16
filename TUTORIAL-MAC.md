@@ -56,6 +56,14 @@ Para cada empresa encontrada aparece um ponto `.` e, depois de cada busca, o and
 - **S** + Enter: busca mais 50 e pergunta de novo no final.
 - **N** + Enter: para de buscar e **abre o painel** no navegador (`http://localhost:4000`) com os **leads do dia**.
 
+**Ordem da busca** (ele só passa para a próxima fase quando termina todas as buscas da anterior):
+1. **Estados principais:** SP, RJ, MG, PR, SC, RS e DF (65 cidades), contato por WhatsApp
+2. **Empresas gringas:** EUA, Reino Unido, Canadá, Austrália, Irlanda e Nova Zelândia, contato por **e-mail** (veja o passo 6)
+3. **Demais estados do Brasil** (43 cidades), contato por WhatsApp
+
+O painel mostra os leads de WhatsApp na aba **💬 WhatsApp (Brasil)** e os de e-mail na aba **✉️ E-mail (internacional)**.
+Para mudar quais estados vêm primeiro, use `"busca": { "estadosPrioritarios": ["SP", "RJ", "MG"] }` no `config.json` (passo 9).
+
 **Dá para rodar várias vezes no mesmo dia** (de manhã, no meio do dia, no fim do dia). Cada vez ele busca **50 leads novos**,
 continua de onde parou e nunca repete empresa. O painel mostra todos os leads do dia, de todas as rodadas.
 
@@ -98,7 +106,8 @@ Rode de novo para conferir os próximos 300. Para outra quantidade: `bash "Verif
 bash "Gerar Leads Internacional.command"
 ```
 
-Funciona igual ao do Brasil: busca **50 empresas** em 64 cidades de países de língua inglesa (72 tipos de negócio,
+O `Gerar Leads.command` já chega nas empresas gringas sozinho (fase 2). Este atalho serve para ir **direto** para elas:
+ele busca **50 empresas** em 64 cidades de países de língua inglesa (72 tipos de negócio,
 de dentista a encanador), pergunta se você quer **+50** e, ao encerrar, abre o painel na aba **✉️ E-mail (internacional)**.
 
 - Só entram empresas com **e-mail encontrado no site** (página inicial ou página de contato). Sem e-mail, ela é descartada.
