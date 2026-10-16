@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getDb, importDatabase, insertLead, leadsToday, nameKey, panelLeads, setContacted, updateLead } from '../src/db.js';
+import { getDb, hideRepeats, importDatabase, insertLead, leadsToday, nameKey, panelLeads, setContacted, updateLead } from '../src/db.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -61,7 +61,24 @@ test('mesma empresa (nome) na mesma cidade não entra de novo, mesmo com outro t
   assert.equal(nameKey('Clínica Sorriso Ltda. - Dentista em Recife'), nameKey('CLINICA SORRISO'));
   assert.ok(insertLead({ ...base, name: 'Clínica Sorriso', placeId: 'n1', phone: '5581999990021' }));
   assert.ok(!insertLead({ ...base, name: 'Clinica Sorriso Ltda', placeId: 'n2', phone: '5581999990022' }));
-  assert.ok(insertLead({ ...base, name: 'Clínica Sorriso', city: 'Olinda, PE', placeId: 'n3', phone: '5581999990023' }));
+  // cidade vizinha do mesmo estado (o Maps mostra empresas de Recife na busca de Olinda): repetido
+  assert.ok(!insertLead({ ...base, name: 'Clínica Sorriso', city: 'Olinda, PE', placeId: 'n3', phone: '5581999990023' }));
+  // outro estado: outra empresa
+  assert.ok(insertLead({ ...base, name: 'Clínica Sorriso', city: 'Natal, RN', placeId: 'n4', phone: '5584999990024' }));
+  // o mesmo profissional com o nome escrito de outro jeito
+  assert.ok(insertLead({ ...base, name: 'Psicóloga Ana Souza - CRP 06/123', placeId: 'n5', phone: '5581999990025' }));
+  assert.ok(!insertLead({ ...base, name: 'Ana Souza Psicologia', placeId: 'n6', phone: '5581999990026' }));
+});
+
+test('hideRepeats tira da fila quem tem o mesmo nome de alguém já contatado no estado', () => {
+  const db = getDb();
+  db.prepare("INSERT INTO leads (place_id, name, name_key, uf, city, phone, status) VALUES ('h1', 'Bela Moda', 'belamoda', 'PE', 'Recife, PE', '5581999990051', 'contatado')").run();
+  db.prepare("INSERT INTO leads (place_id, name, name_key, uf, city, phone, status) VALUES ('h2', 'Bela Moda', 'belamoda', 'PE', 'Olinda, PE', '5581999990052', 'qualificado')").run();
+  db.prepare("INSERT INTO leads (place_id, name, name_key, uf, city, phone, status) VALUES ('h3', 'Bela Moda', 'belamoda', 'RN', 'Natal, RN', '5584999990053', 'qualificado')").run();
+  assert.equal(hideRepeats(), 1);
+  const st = (p) => db.prepare('SELECT status FROM leads WHERE place_id = ?').get(p).status;
+  assert.equal(st('h2'), 'descartado');
+  assert.equal(st('h3'), 'qualificado');
 });
 
 test('importa banco de versão antiga: contatado continua contatado', () => {

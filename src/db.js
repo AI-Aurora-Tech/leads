@@ -81,27 +81,74 @@ export function getDb(file = join(DATA_DIR, 'leads.db')) {
   if (!cols.has('lang')) db.exec('ALTER TABLE leads ADD COLUMN lang TEXT');
   // Nome normalizado: a mesma empresa na mesma cidade não entra duas vezes (ex.: com outro telefone)
   if (!cols.has('name_key')) db.exec('ALTER TABLE leads ADD COLUMN name_key TEXT');
+  // Estado (UF) ou país: o mesmo profissional aparece em buscas de cidades vizinhas
+  if (!cols.has('uf')) db.exec('ALTER TABLE leads ADD COLUMN uf TEXT');
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_leads_wa_msg ON leads(wa_msg_id);
     CREATE INDEX IF NOT EXISTS idx_leads_name_key ON leads(name_key, city);
+    CREATE INDEX IF NOT EXISTS idx_leads_name_uf ON leads(name_key, uf);
+    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_email ON leads(email) WHERE email IS NOT NULL;
     CREATE TABLE IF NOT EXISTS imports (path TEXT PRIMARY KEY, mtime REAL);
   `);
   if (file !== ':memory:') importOldDatabases();
-  const fill = db.prepare('UPDATE leads SET name_key = ? WHERE id = ?');
-  for (const r of db.prepare('SELECT id, name FROM leads WHERE name_key IS NULL').all()) fill.run(nameKey(r.name), r.id);
+  // Recalcula nome normalizado e UF quando a regra muda (ou em leads importados)
+  const version = db.prepare("SELECT value FROM meta WHERE key = 'name_key_v'").get()?.value;
+  const fill = db.prepare('UPDATE leads SET name_key = ?, uf = ? WHERE id = ?');
+  const rows = db.prepare(`SELECT id, name, city FROM leads ${version === NAME_KEY_V ? 'WHERE name_key IS NULL OR uf IS NULL' : ''}`).all();
+  for (const r of rows) fill.run(nameKey(r.name), ufOf(r.city), r.id);
+  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('name_key_v', ?)").run(NAME_KEY_V);
+  hideRepeats();
   return db;
 }
 
-/** "Clínica Sorriso Ltda." → "clinicasorriso" */
+const NAME_KEY_V = '2';
+const TITLES = 'dra?|psicologa?o?|psicologia|fonoaudiologa?o?|fonoaudiologia|fono|nutricionista|nutri|fisioterapeuta|fisioterapia|dentista|odontologia|advogada?o?|advocacia|clinica|consultorio|studio|estudio|espaco|instituto';
+
+/**
+ * Nome normalizado para achar a mesma empresa/profissional com outro telefone ou endereço:
+ * "Psicóloga Ana Souza - CRP 06/123" e "Ana Souza Psicologia" → "anasouza".
+ */
 export function nameKey(name = '') {
-  return name
-    .split(/\s[-|–]\s/)[0]
+  const base = name
+    .split(/\s[-|–]\s|\|/)[0]
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/\b(ltda|me|epp|eireli|s\/?a|llc|inc|ltd)\.?$/, '')
-    .replace(/[^a-z0-9]/g, '');
+    .replace(/\b(crp|crm|cro|crfa|crefito|crn|crmv|oab|creci|cau|crea)\b.*$/, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\b(ltda|me|epp|eireli|s a|sa|llc|inc|ltd)\s*$/, '')
+    .trim();
+  const strip = base
+    .replace(new RegExp(`^((${TITLES})\\s+)+`), '')
+    .replace(new RegExp(`(\\s+(${TITLES}))+$`), '')
+    .replace(/\s+/g, '');
+  // Se sobrar muito pouco ("Dra. Ana" → "ana"), fica com o nome inteiro para não juntar pessoas diferentes
+  return strip.length >= 5 ? strip : base.replace(/\s+/g, '');
+}
+
+/** "Campinas, SP" → "SP"; "Austin, TX, USA" → "USA" */
+export function ufOf(city) {
+  return city ? city.split(',').at(-1).trim().toUpperCase() : null;
+}
+
+const CONTACTED_SQL = "('contatado', 'enviado', 'followup', 'respondeu', 'optout')";
+
+/**
+ * Tira da fila (status descartado, notes "repetido") leads que são a mesma empresa de outro lead:
+ * mesmo nome no mesmo estado que alguém já contatado, ou repetido entre os próprios pendentes.
+ * Chamado ao abrir o banco e depois de conferir as conversas do WhatsApp.
+ */
+export function hideRepeats() {
+  const res = db
+    .prepare(
+      `UPDATE leads SET status = 'descartado', notes = 'repetido'
+       WHERE status IN ('novo', 'qualificado') AND length(name_key) >= 5 AND EXISTS (
+         SELECT 1 FROM leads o WHERE o.id != leads.id AND o.name_key = leads.name_key AND o.uf IS leads.uf
+           AND (o.status IN ${CONTACTED_SQL} OR (o.status IN ('novo', 'qualificado') AND o.id < leads.id)))`,
+    )
+    .run();
+  return res.changes;
 }
 
 const CONTACTED = ['contatado', 'enviado', 'followup', 'respondeu', 'optout'];
@@ -191,15 +238,21 @@ export function findLeadByMsgId(msgId) {
  */
 export function insertLead(lead) {
   const key = nameKey(lead.name);
-  if (key && getDb().prepare('SELECT 1 FROM leads WHERE name_key = ? AND city IS ?').get(key, lead.city ?? null)) return false;
+  const uf = ufOf(lead.city);
+  // Mesmo nome: no mesmo estado (nomes curtos/genéricos, só na mesma cidade)
+  const same =
+    key.length >= 5
+      ? getDb().prepare('SELECT 1 FROM leads WHERE name_key = ? AND uf IS ?').get(key, uf)
+      : key && getDb().prepare('SELECT 1 FROM leads WHERE name_key = ? AND city IS ?').get(key, lead.city ?? null);
+  if (same) return false;
   // Brasil precisa de telefone (WhatsApp); internacional precisa de site (de onde sai o e-mail)
   const usable = lead.lang === 'en' ? lead.website || lead.email : lead.phone;
   const res = getDb()
     .prepare(
       `INSERT OR IGNORE INTO leads
         (place_id, name, phone, phone_type, raw_phone, address, city, category, website, rating, reviews, maps_url, source, query, status,
-         email, lang, name_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         email, lang, name_key, uf)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       lead.placeId ?? null,
@@ -220,6 +273,7 @@ export function insertLead(lead) {
       lead.email ?? null,
       lead.lang ?? null,
       key || null,
+      uf,
     );
   return res.changes > 0;
 }

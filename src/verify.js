@@ -1,7 +1,10 @@
 // Confere quais números têm WhatsApp usando o WhatsApp Web (QR code), sem enviar nenhuma mensagem.
 // Números sem WhatsApp saem do painel; os confirmados ganham o selo "WhatsApp verificado".
 
-import { getDb, updateLead } from './db.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { DATA_DIR } from './config.js';
+import { getDb, hideRepeats, updateLead } from './db.js';
 import { formatPhone } from './phone.js';
 import { randomBetween, sleep } from './schedule.js';
 import { startWhatsApp } from './sender.js';
@@ -45,7 +48,30 @@ export function markExistingChats(chatIds) {
       n++;
     }
   }
-  return n;
+  return n + hideRepeats();
+}
+
+/**
+ * Confere sozinho as conversas do WhatsApp (sem QR Code, sem enviar nada) e tira do painel quem
+ * você já contatou. Só roda se o WhatsApp já foi conectado alguma vez (Verificar WhatsApp).
+ * @returns número de leads tirados do painel; null sem WhatsApp conectado; false se não deu para conferir agora
+ */
+export async function syncChats({ timeoutMs = 120000 } = {}) {
+  if (!existsSync(join(DATA_DIR, 'whatsapp'))) return null;
+  let client;
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('demorou demais')), timeoutMs).unref());
+  try {
+    const job = (async () => {
+      await startWhatsApp({ allowQr: false, onClient: (c) => (client = c) });
+      const chats = await client.getChats();
+      return markExistingChats(chats.filter((c) => !c.isGroup).map((c) => c.id._serialized));
+    })();
+    return await Promise.race([job, timeout]);
+  } catch {
+    return false;
+  } finally {
+    await client?.destroy().catch(() => {});
+  }
 }
 
 export async function verifyNumbers({ limit = 300, visible = false } = {}) {
