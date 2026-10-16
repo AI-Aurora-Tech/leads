@@ -118,6 +118,7 @@ export function renderPanel(cards, { title = 'Leads AuroraTech', generatedAt = n
   .tabs a { padding:6px 12px; border-radius:999px; border:1px solid var(--line); color:var(--text); text-decoration:none; font-size:14px; }
   .tabs a.on { background:var(--accent); border-color:var(--accent); color:#fff; }
   .actions label { margin-left:auto; display:flex; align-items:center; gap:6px; color:var(--muted); font-size:14px; }
+  .offline { margin-top:8px; padding:10px 12px; border-radius:8px; background:#fef3c7; color:#78350f; font-size:14px; }
   .empty { text-align:center; color:var(--muted); padding:40px 0; }
 </style>
 </head>
@@ -137,6 +138,8 @@ export function renderPanel(cards, { title = 'Leads AuroraTech', generatedAt = n
     <label id="verifLabel" hidden><input type="checkbox" id="verif"> Só WhatsApp verificado</label>
   </div>
   <div class="stats" id="stats"></div>
+  <div class="offline" id="offline" hidden>⚠️ O robô está fechado, então o "Contatado" não foi salvo no robô (ficou guardado neste navegador).
+    Abra o <b>Abrir Painel.command</b> e recarregue esta página para salvar. Sem isso, o lead pode aparecer de novo.</div>
   <div class="stats" id="novos" hidden><button class="btn" onclick="location.reload()">🔄 Há leads novos — clique para atualizar</button></div>
 </header>
 <main id="list"></main>
@@ -152,12 +155,35 @@ const SERVER = location.protocol.startsWith('http');
 let done = {};
 if (!SERVER) try { done = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch {}
 for (const l of LEADS) if (l.contatado) done[l.id] = done[l.id] || true;
+// Se o robô foi fechado, o "contatado" fica guardado aqui (pelo telefone/e-mail) e é enviado depois
+const PENDING = 'aurora-leads-pendentes';
+const pending = () => { try { return JSON.parse(localStorage.getItem(PENDING) || '[]'); } catch { return []; } };
+const setPending = (list) => { try { localStorage.setItem(PENDING, JSON.stringify(list)); } catch {} };
+const post = (item) => fetch('api/contatado', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) })
+  .then((r) => { if (!r.ok && r.status !== 404) throw new Error(r.status); });
+function offline(on) {
+  document.getElementById('offline').hidden = !on;
+}
 const save = (id) => {
   if (!SERVER) try { localStorage.setItem(KEY, JSON.stringify(done)); } catch {}
   if (SERVER && id != null) {
-    fetch('api/contatado', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: Number(id), contatado: Boolean(done[id]) }) }).catch(() => {});
+    const l = LEADS.find((x) => String(x.id) === String(id));
+    const item = { id: Number(id), contatado: Boolean(done[id]), telefone: l?.telefone || null, email: l?.email || null };
+    post(item).then(() => offline(false)).catch(() => {
+      setPending([...pending().filter((p) => p.id !== item.id), item]);
+      offline(true);
+    });
   }
 };
+if (SERVER && pending().length) {
+  // Reenvia o que ficou guardado quando o robô estava fechado
+  Promise.allSettled(pending().map((p) => post(p).then(() => p.id))).then((res) => {
+    const sent = new Set(res.filter((r) => r.status === 'fulfilled').map((r) => r.value));
+    const left = pending().filter((p) => !sent.has(p.id));
+    setPending(left);
+    offline(left.length > 0);
+  });
+}
 document.getElementById(CANAL === 'email' ? 'tabEmail' : 'tabWa').classList.add('on');
 if (CANAL === 'email') document.getElementById('celLabel').hidden = true;
 if (LEADS.some((l) => l.whatsapp)) document.getElementById('verifLabel').hidden = false;

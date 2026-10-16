@@ -2,7 +2,13 @@
 // aqui o "contatado" é gravado no banco do robô: nenhum lead aparece de novo como novo.
 
 import { createServer } from 'node:http';
-import { panelLeads, setContacted } from './db.js';
+import { getDb, panelLeads, setContacted } from './db.js';
+
+function leadIdFor({ phone, email }) {
+  if (phone) return getDb().prepare('SELECT id FROM leads WHERE phone = ?').get(phone);
+  if (email) return getDb().prepare('SELECT id FROM leads WHERE email = ?').get(email);
+  return null;
+}
 import { leadToCard, renderPanel } from './panel.js';
 
 export function startPanelServer(config, { port = 4000, log = console.log } = {}) {
@@ -24,8 +30,10 @@ export function startPanelServer(config, { port = 4000, log = console.log } = {}
       req.on('data', (c) => (body += c));
       req.on('end', () => {
         try {
-          const { id, contatado } = JSON.parse(body);
-          const ok = setContacted(Number(id), Boolean(contatado));
+          const { id, contatado, telefone, email } = JSON.parse(body);
+          // Telefone/e-mail identificam o lead com segurança (o id muda se o banco for outro)
+          const lead = leadIdFor({ phone: telefone, email });
+          const ok = setContacted(lead?.id ?? Number(id), Boolean(contatado));
           res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok }));
         } catch {
           res.writeHead(400).end();

@@ -106,6 +106,17 @@ function shuffle(items, seed = 20261015) {
   return out;
 }
 
+/**
+ * Quão promissor é um resultado antes de analisar o site (para escolher os melhores de cada busca):
+ * Brasil: celular, sem site (ou só rede social), com avaliações. Internacional: tem site (para achar o e-mail).
+ */
+function promise({ p, phone }, intl) {
+  const reviews = Math.min(p.reviews || 0, 500) / 1000;
+  if (intl) return (p.website && !socialHost(p.website) ? 2 : 0) + reviews;
+  if (!phone) return -1;
+  return (phone.type === 'celular' ? 2 : 0) + (!p.website || socialHost(p.website) ? 1 : 0) + reviews;
+}
+
 /** Abre um arquivo ou endereço no navegador padrão (Mac, Windows ou Linux). */
 function openFile(file) {
   const abs = /^https?:/.test(file) ? file : resolve(file);
@@ -201,9 +212,13 @@ const commands = {
         process.stdout.write(' ');
         let added = 0;
         let noPhone = 0;
-        for (const p of found) {
-          // No internacional o telefone fica só como informação (o contato é por e-mail)
-          const phone = intl ? null : normalizePhone(p.rawPhone);
+        // Só os melhores de cada busca entram: assim cada rodada passa por muitos nichos e cidades
+        const cap = Number(base.leadsPorBusca || Infinity);
+        const ranked = found
+          .map((p) => ({ p, phone: intl ? null : normalizePhone(p.rawPhone) })) // internacional: contato por e-mail
+          .sort((a, b) => promise(b, intl) - promise(a, intl));
+        for (const { p, phone } of ranked) {
+          if (added >= cap) break;
           if (!intl && !phone) noPhone++;
           if (insertLead({ ...p, phone: phone?.e164, phoneType: phone?.type, city: cidade, query, lang })) added++;
         }
@@ -370,6 +385,14 @@ const commands = {
       inicio = today();
       alvo = inicio + meta;
       console.log(`\n🔎 Buscando mais ${meta}...`);
+    }
+    // Última barreira contra repetidos: quem já tem conversa no seu WhatsApp sai do painel
+    if (!intlOnly) {
+      console.log('💬 Conferindo suas conversas do WhatsApp para não repetir contato...');
+      const removed = await (await import('./verify.js')).syncChats();
+      if (removed === null) console.log('   (pulei: conecte o WhatsApp uma vez com o Verificar WhatsApp.command para ativar esta conferência)');
+      else if (removed === false) console.log('   (não deu para conferir agora; o WhatsApp pode estar aberto em outra janela do robô)');
+      else console.log(`   ✅ ${removed} lead(s) que você já tinha contatado saíram do painel.`);
     }
     // Abre na aba de e-mail quando os leads de hoje são todos internacionais
     if (intlOnly || (leadsToday('en') > inicioEn && !leadsToday())) values.internacional = true;
