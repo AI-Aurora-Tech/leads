@@ -49,7 +49,8 @@ const REPLYABLE = ['enviado', 'followup', 'respondeu'];
 
 // ───────────────────────────── canal: WhatsApp Web ─────────────────────────────
 
-export async function startWhatsApp({ visible = false } = {}) {
+/** @param allowQr false = só usa uma sessão já conectada: se o WhatsApp pedir QR Code, desiste (erro 'qr') */
+export async function startWhatsApp({ visible = false, allowQr = true, onClient } = {}) {
   const { default: wweb } = await import('whatsapp-web.js');
   const { default: qrcode } = await import('qrcode-terminal');
   const { Client, LocalAuth } = wweb;
@@ -67,8 +68,16 @@ export async function startWhatsApp({ visible = false } = {}) {
       executablePath: await workingBrowserPath(),
     },
   });
+  onClient?.(client);
 
+  let rejectQr;
+  const qrNeeded = new Promise((_, reject) => (rejectQr = reject));
+  qrNeeded.catch(() => {}); // evita erro solto se o QR chegar depois
   client.on('qr', (qr) => {
+    if (!allowQr) {
+      rejectQr(Object.assign(new Error('O WhatsApp pediu QR Code'), { code: 'qr' }));
+      return;
+    }
     log('Escaneie o QR Code abaixo no WhatsApp do celular (Aparelhos conectados > Conectar um aparelho):');
     qrcode.generate(qr, { small: true });
   });
@@ -76,8 +85,12 @@ export async function startWhatsApp({ visible = false } = {}) {
   client.on('disconnected', (r) => log('WhatsApp desconectado:', r));
 
   const ready = new Promise((resolve) => client.once('ready', resolve));
-  await client.initialize();
-  await ready;
+  try {
+    await Promise.race([client.initialize().then(() => ready), qrNeeded]);
+  } catch (err) {
+    await client.destroy().catch(() => {});
+    throw err;
+  }
   log('WhatsApp conectado ✅');
   return client;
 }

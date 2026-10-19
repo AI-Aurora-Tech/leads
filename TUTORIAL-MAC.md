@@ -1,7 +1,7 @@
 # Tutorial: usando o Robô de Leads no Mac
 
-O que o robô faz: procura empresas de **113 tipos de negócio** (de padaria a metalúrgica) em **108 cidades do
-Brasil todo** (todas as capitais e as maiores cidades do interior). Ele analisa o site de cada uma e monta um
+O que o robô faz: procura empresas de **162 tipos de negócio** (de padaria a construtora) em **197 cidades e bairros do
+Brasil todo** (todas as capitais, as maiores cidades do interior e os principais bairros de São Paulo, Rio, BH e Porto Alegre). Ele analisa o site de cada uma e monta um
 **painel** com os melhores leads. Em cada lead tem o botão **💬 Abrir no WhatsApp**, que abre a conversa já com
 a mensagem padrão da Aurora Tech escrita. Você só aperta enviar.
 
@@ -10,8 +10,13 @@ Nova Zelândia, com o **e-mail** encontrado no site de cada uma, para você mand
 
 **Garantias:**
 - **Sem leads repetidos:** a mesma empresa entra uma vez só. O robô compara o lugar no Google, o telefone,
-  o e-mail e o nome da empresa na mesma cidade, mesmo que ela venha de outra busca.
+  o e-mail e o nome da empresa (ou do profissional) no mesmo estado: "Psicóloga Ana Souza" e "Ana Souza Psicologia"
+  contam como a mesma pessoa.
   Quem você marca como **contatado** fica salvo e não volta como lead novo.
+- **Confere o seu WhatsApp:** no fim de cada rodada, o robô olha as suas conversas e tira do painel quem você já
+  contatou, mesmo que tenha sido fora do robô. Para ativar, conecte o WhatsApp **uma vez** com o **Verificar WhatsApp** (passo 5).
+- **Variedade:** de cada busca entram só os **3 melhores** leads. Cada rodada de 50 passa por uns 17 nichos e cidades
+  diferentes, em vez de vir tudo do mesmo tipo de negócio.
 - **Histórico guardado fora da pasta do robô**, na pasta **`AuroraLeads`** da sua pasta pessoal. Baixar uma versão
   nova não apaga nada, e não precisa mais copiar a pasta `data`.
 - **Só números de WhatsApp:** o painel mostra por padrão só **celulares**. Para ter certeza absoluta, rode o
@@ -57,9 +62,19 @@ Para cada empresa encontrada aparece um ponto `.` e, depois de cada busca, o and
 - **N** + Enter: para de buscar e **abre o painel** no navegador (`http://localhost:4000`) com os **leads do dia**.
 
 **Ordem da busca** (ele só passa para a próxima fase quando termina todas as buscas da anterior):
-1. **Estados principais:** SP, RJ, MG, PR, SC, RS e DF (65 cidades), contato por WhatsApp
+1. **Estados principais:** SP, RJ, MG e RS (140 cidades e bairros), contato por WhatsApp
 2. **Empresas gringas:** EUA, Reino Unido, Canadá, Austrália, Irlanda e Nova Zelândia, contato por **e-mail** (veja o passo 6)
-3. **Demais estados do Brasil** (43 cidades), contato por WhatsApp
+3. **Demais estados do Brasil** (57 cidades, incluindo PR, SC e DF), contato por WhatsApp
+
+**Dentro de cada fase, os nichos seguem esta ordem** (também só passa para o próximo quando termina o anterior):
+1. Clínicas odontológicas e de estética
+2. Escolas (particulares, educação infantil, idiomas, música, técnicas…)
+3. Salões de beleza (manicure, pedicure, esmalteria, sobrancelha, cabeleireiro…)
+4. Mercadinhos (minimercados, mercearias, empórios, hortifrútis…)
+5. Todos os outros nichos
+
+Para mudar essa ordem ou os nichos de cada grupo, use `"busca": { "prioridadeNichos": [...] }` no `config.json`
+(o formato está no `config.example.json`).
 
 O painel mostra os leads de WhatsApp na aba **💬 WhatsApp (Brasil)** e os de e-mail na aba **✉️ E-mail (internacional)**.
 Para mudar quais estados vêm primeiro, use `"busca": { "estadosPrioritarios": ["SP", "RJ", "MG"] }` no `config.json` (passo 9).
@@ -163,6 +178,7 @@ A configuração completa (nichos, cidades, mensagem) está em `config.example.j
 | "Não consegui abrir nenhum navegador" | Instale o **Google Chrome** (passo 1) e rode de novo |
 | `command not found: node` | Instale o Node.js (passo 1) e **abra um Terminal novo** |
 | Muitas buscas com "0 encontrados" | O Google pode ter mostrado um captcha. Pare (`Ctrl + C`), espere uns minutos e rode de novo: ele refaz só essas |
-| Apareceu de novo alguém que já contatei | Rode o **Verificar WhatsApp** (passo 5): ele tira do painel quem já tem conversa com você. Se ainda acontecer, me mande o nome da empresa |
+| Apareceu de novo alguém que já contatei | Conecte o WhatsApp com o **Verificar WhatsApp** (passo 5): a partir daí, toda rodada tira do painel quem já tem conversa com você. Use sempre o botão **💬 Abrir no WhatsApp** (é ele que marca como contatado) e deixe o Terminal aberto enquanto usa o painel. Se ainda acontecer, me mande o nome da empresa |
+| Aviso amarelo "O robô está fechado" no painel | Você fechou o Terminal. Rode o **Abrir Painel.command** e recarregue a página: os contatos marcados são salvos na hora |
 | O painel não abre | Abra no navegador o endereço `http://localhost:4000` (com o robô rodando) |
 | Configuração antiga | Se aparecer "Configuração antiga guardada em config.antigo.json", é normal: o robô passou a usar a configuração nova |

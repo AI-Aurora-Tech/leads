@@ -106,6 +106,17 @@ function shuffle(items, seed = 20261015) {
   return out;
 }
 
+/**
+ * Quão promissor é um resultado antes de analisar o site (para escolher os melhores de cada busca):
+ * Brasil: celular, sem site (ou só rede social), com avaliações. Internacional: tem site (para achar o e-mail).
+ */
+function promise({ p, phone }, intl) {
+  const reviews = Math.min(p.reviews || 0, 500) / 1000;
+  if (intl) return (p.website && !socialHost(p.website) ? 2 : 0) + reviews;
+  if (!phone) return -1;
+  return (phone.type === 'celular' ? 2 : 0) + (!p.website || socialHost(p.website) ? 1 : 0) + reviews;
+}
+
 /** Abre um arquivo ou endereço no navegador padrão (Mac, Windows ou Linux). */
 function openFile(file) {
   const abs = /^https?:/.test(file) ? file : resolve(file);
@@ -119,19 +130,41 @@ function openFile(file) {
   }
 }
 /**
- * Ordem da busca: 1) estados prioritários do Brasil, 2) empresas de língua inglesa (e-mail),
- * 3) os demais estados do Brasil. Os estados prioritários ficam em busca.estadosPrioritarios.
+ * Grupos de nichos na ordem de prioridade (busca.prioridadeNichos / internacional.prioridadeNichos).
+ * Tudo o que não está em nenhum grupo vira o último: "Outros nichos".
  */
-function buildPhases(cfg) {
+function nicheGroups(base) {
+  const groups = (base.prioridadeNichos || []).filter((g) => g.nichos?.length);
+  const used = new Set(groups.flatMap((g) => g.nichos));
+  const outros = base.nichos.filter((n) => !used.has(n));
+  return [...groups, ...(outros.length ? [{ nome: 'Outros nichos', nichos: outros }] : [])];
+}
+
+/**
+ * Ordem da busca. Lugares: 1) estados prioritários do Brasil, 2) empresas de língua inglesa (e-mail),
+ * 3) demais estados. Dentro de cada lugar, os nichos na ordem de prioridade (dentistas e estética,
+ * escolas, salões, mercadinhos, outros). Só passa para a etapa seguinte quando termina a atual.
+ */
+function buildPhases(cfg, { intlOnly = false, cidades } = {}) {
   const prio = new Set(cfg.busca.estadosPrioritarios || []);
   const uf = (c) => c.split(',').at(-1).trim().toUpperCase();
   const top = cfg.busca.cidades.filter((c) => prio.has(uf(c)));
   const rest = cfg.busca.cidades.filter((c) => !prio.has(uf(c)));
-  return [
-    top.length && { titulo: `📍 Fase 1: ${[...prio].join(', ')} (${top.length} cidades)`, intl: false, cidades: top },
-    { titulo: '🌎 Fase 2: empresas de países de língua inglesa (contato por e-mail)', intl: true },
-    rest.length && { titulo: `📍 Fase 3: demais estados do Brasil (${rest.length} cidades)`, intl: false, cidades: rest },
-  ].filter(Boolean);
+  const places = cidades
+    ? [{ titulo: '📍 Cidades escolhidas', intl: false, cidades }]
+    : intlOnly
+      ? [{ titulo: '🌎 Empresas de países de língua inglesa (contato por e-mail)', intl: true }]
+      : [
+          top.length && { titulo: `📍 Fase 1: ${[...prio].join(', ')} (${top.length} cidades)`, intl: false, cidades: top },
+          { titulo: '🌎 Fase 2: empresas de países de língua inglesa (contato por e-mail)', intl: true },
+          rest.length && { titulo: `📍 Fase 3: demais estados do Brasil (${rest.length} cidades)`, intl: false, cidades: rest },
+        ].filter(Boolean);
+  // --termo escolhe os nichos na mão: sem ordem de prioridade
+  if (values.termo) return places;
+  return places.flatMap((place) => {
+    const groups = nicheGroups(place.intl ? cfg.internacional : cfg.busca);
+    return groups.map((g, i) => ({ ...place, termos: g.nichos, titulo: `${place.titulo} · nichos ${i + 1}/${groups.length}: ${g.nome}` }));
+  });
 }
 
 /** Pergunta no Terminal se quer mais leads. Sem Terminal interativo, encerra. */
@@ -154,7 +187,7 @@ const [cmd, ...args] = positionals;
 
 const commands = {
   /** @returns true se parou por `done` (ainda há buscas a fazer), false se fez todas */
-  async buscar({ afterEach, done = () => false, intl = values.internacional, cidades: onlyCities, quiet = false, titulo } = {}) {
+  async buscar({ afterEach, done = () => false, intl = values.internacional, cidades: onlyCities, termos: onlyTerms, quiet = false, titulo } = {}) {
     const fonte = values.fonte || config.busca.fonte;
     if (fonte === 'places' && !env.placesKey && !quiet) {
       console.log('Sem GOOGLE_PLACES_API_KEY no .env — usando --fonte maps (navegador).');
@@ -168,7 +201,7 @@ const commands = {
     // Internacional: nichos e cidades em inglês, busca em inglês, contato por e-mail
     const base = intl ? config.internacional : config.busca;
     const lang = intl ? 'en' : undefined;
-    const termos = todos(values.termo) ? base.nichos : list(values.termo);
+    const termos = todos(values.termo) ? onlyTerms || base.nichos : list(values.termo);
     const cidades = values.cidade ? list(values.cidade) : onlyCities || base.cidades;
     const max = Number(values.max || (source === 'maps' ? base.maxPorBuscaNavegador : config.busca.maxPorBusca));
 
@@ -201,9 +234,13 @@ const commands = {
         process.stdout.write(' ');
         let added = 0;
         let noPhone = 0;
-        for (const p of found) {
-          // No internacional o telefone fica só como informação (o contato é por e-mail)
-          const phone = intl ? null : normalizePhone(p.rawPhone);
+        // Só os melhores de cada busca entram: assim cada rodada passa por muitos nichos e cidades
+        const cap = Number(base.leadsPorBusca || Infinity);
+        const ranked = found
+          .map((p) => ({ p, phone: intl ? null : normalizePhone(p.rawPhone) })) // internacional: contato por e-mail
+          .sort((a, b) => promise(b, intl) - promise(a, intl));
+        for (const { p, phone } of ranked) {
+          if (added >= cap) break;
           if (!intl && !phone) noPhone++;
           if (insertLead({ ...p, phone: phone?.e164, phoneType: phone?.type, city: cidade, query, lang })) added++;
         }
@@ -337,7 +374,7 @@ const commands = {
     const meta = Number(values.meta ?? (intlOnly ? config.internacional.leadsPorRodada : config.busca.leadsPorDia) ?? 50);
     // Leads da rodada contam os dois tipos (WhatsApp no Brasil + e-mail no internacional)
     const today = () => (intlOnly ? 0 : leadsToday()) + leadsToday('en');
-    const phases = values.cidade || intlOnly ? [{ intl: intlOnly }] : buildPhases(config);
+    const phases = buildPhases(config, { intlOnly, cidades: values.cidade ? [values.cidade] : undefined });
     // Cada rodada traz `meta` leads novos: dá para rodar de manhã, à tarde e à noite
     let inicio = today();
     const inicioEn = leadsToday('en');
@@ -356,7 +393,7 @@ const commands = {
       // Fases em ordem: só passa para a próxima quando todas as buscas da atual já foram feitas
       while (fase < phases.length && !done()) {
         const ph = phases[fase];
-        const stopped = await commands.buscar({ afterEach: refresh, done, intl: ph.intl, cidades: ph.cidades, quiet: phases.length > 1, titulo: ph.titulo });
+        const stopped = await commands.buscar({ afterEach: refresh, done, intl: ph.intl, cidades: ph.cidades, termos: ph.termos, quiet: phases.length > 1, titulo: ph.titulo });
         if (process.exitCode) process.exit(process.exitCode);
         if (!stopped) fase++;
       }
@@ -370,6 +407,14 @@ const commands = {
       inicio = today();
       alvo = inicio + meta;
       console.log(`\n🔎 Buscando mais ${meta}...`);
+    }
+    // Última barreira contra repetidos: quem já tem conversa no seu WhatsApp sai do painel
+    if (!intlOnly) {
+      console.log('💬 Conferindo suas conversas do WhatsApp para não repetir contato...');
+      const removed = await (await import('./verify.js')).syncChats();
+      if (removed === null) console.log('   (pulei: conecte o WhatsApp uma vez com o Verificar WhatsApp.command para ativar esta conferência)');
+      else if (removed === false) console.log('   (não deu para conferir agora; o WhatsApp pode estar aberto em outra janela do robô)');
+      else console.log(`   ✅ ${removed} lead(s) que você já tinha contatado saíram do painel.`);
     }
     // Abre na aba de e-mail quando os leads de hoje são todos internacionais
     if (intlOnly || (leadsToday('en') > inicioEn && !leadsToday())) values.internacional = true;
