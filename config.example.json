@@ -20,6 +20,12 @@
   "busca": {
     "leadsPorDia": 50,
     "estadosPrioritarios": ["SP", "RJ", "MG", "RS"],
+    "prioridadeNichos": [
+      { "nome": "Clínicas odontológicas e de estética", "nichos": ["clínica odontológica", "consultório odontológico", "dentista", "clínica de estética", "estética facial e corporal", "clínica de harmonização facial"] },
+      { "nome": "Escolas", "nichos": ["escola particular", "colégio particular", "escola de educação infantil", "berçário", "escola bilíngue", "escola de idiomas", "escola técnica", "escola de música", "escola de informática", "curso preparatório", "escola de dança", "escola de natação"] },
+      { "nome": "Salões de beleza (manicure, pedicure…)", "nichos": ["salão de beleza", "manicure e pedicure", "esmalteria", "nail designer", "cabeleireiro", "studio de sobrancelha", "extensão de cílios", "depilação", "barbearia"] },
+      { "nome": "Mercadinhos", "nichos": ["mercadinho", "minimercado", "mercearia", "supermercado de bairro", "empório", "hortifruti", "loja de conveniência", "açougue"] }
+    ],
     "fonte": "places",
     "maxPorBusca": 60,
     "maxPorBuscaNavegador": 12,
@@ -390,6 +396,12 @@
   },
 
   "internacional": {
+    "prioridadeNichos": [
+      { "nome": "Clínicas odontológicas e de estética", "nichos": ["dentist", "dental clinic", "cosmetic dentist", "med spa", "aesthetic clinic"] },
+      { "nome": "Escolas", "nichos": ["private school", "preschool", "daycare center", "language school", "music school", "tutoring center", "driving school", "dance studio"] },
+      { "nome": "Salões de beleza (manicure, pedicure…)", "nichos": ["nail salon", "beauty salon", "hair salon", "lash studio", "eyebrow threading", "barber shop"] },
+      { "nome": "Mercadinhos", "nichos": ["grocery store", "convenience store", "deli", "butcher shop", "organic food store"] }
+    ],
     "leadsPorRodada": 50,
     "scoreMinimo": 10,
     "maxPorBuscaNavegador": 12,

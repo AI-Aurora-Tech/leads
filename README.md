@@ -30,6 +30,7 @@ bash "Verificar WhatsApp.command" # confere no WhatsApp Web quais números têm 
   (página inicial, páginas de contato, mailto, Cloudflare). O painel tem a aba ✉️ E-mail, com botões para o Gmail e o app de e-mail.
 - **Navegador:** usa o Google Chrome/Edge/Brave instalado; se não houver, o Chrome do puppeteer.
 - **Ordem das fases:** `busca.estadosPrioritarios` (SP, RJ, MG, RS, incluindo bairros das capitais) → internacional (e-mail) → demais estados. Só avança quando todas as buscas da fase foram feitas. `--cidade` ou `--internacional` pulam as fases.
+- **Ordem dos nichos:** `busca.prioridadeNichos` (e `internacional.prioridadeNichos`): dentistas e estética → escolas → salões de beleza → mercadinhos → outros. Vale dentro de cada fase; `--termo` ignora a ordem.
 - **Variedade:** `busca.leadsPorBusca` (3) e `internacional.leadsPorBusca` (5): só os melhores de cada busca entram (celular, sem site, mais avaliações).
 - **Anti-repetição:** mesmo nome normalizado no mesmo estado (tira "Dra.", "Psicóloga", CRP…), `hideRepeats`, conferência das conversas do WhatsApp no fim de cada rodada (se a sessão existir) e fila no navegador quando o robô está fechado.
 - **Rodadas de 50:** cada execução busca `busca.leadsPorDia` (50) celulares qualificados novos e pergunta se quer +50. Pode rodar várias vezes no dia. Outra quantidade: `--meta 80` (`--meta 0` = sem limite).

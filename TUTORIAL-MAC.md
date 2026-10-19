@@ -66,6 +66,16 @@ Para cada empresa encontrada aparece um ponto `.` e, depois de cada busca, o and
 2. **Empresas gringas:** EUA, Reino Unido, Canadá, Austrália, Irlanda e Nova Zelândia, contato por **e-mail** (veja o passo 6)
 3. **Demais estados do Brasil** (57 cidades, incluindo PR, SC e DF), contato por WhatsApp
 
+**Dentro de cada fase, os nichos seguem esta ordem** (também só passa para o próximo quando termina o anterior):
+1. Clínicas odontológicas e de estética
+2. Escolas (particulares, educação infantil, idiomas, música, técnicas…)
+3. Salões de beleza (manicure, pedicure, esmalteria, sobrancelha, cabeleireiro…)
+4. Mercadinhos (minimercados, mercearias, empórios, hortifrútis…)
+5. Todos os outros nichos
+
+Para mudar essa ordem ou os nichos de cada grupo, use `"busca": { "prioridadeNichos": [...] }` no `config.json`
+(o formato está no `config.example.json`).
+
 O painel mostra os leads de WhatsApp na aba **💬 WhatsApp (Brasil)** e os de e-mail na aba **✉️ E-mail (internacional)**.
 Para mudar quais estados vêm primeiro, use `"busca": { "estadosPrioritarios": ["SP", "RJ", "MG"] }` no `config.json` (passo 9).
 

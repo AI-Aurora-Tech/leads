@@ -9,6 +9,7 @@ echo
 source scripts/preparar.sh
 
 echo "🔎 Buscando 50 leads novos. Ordem: 1) SP, RJ, MG e RS  2) empresas gringas (e-mail)  3) demais estados."
+echo "   Nichos: dentistas e estética → escolas → salões de beleza → mercadinhos → outros."
 echo "   No final ele pergunta se você quer +50 ou encerrar e abrir o painel."
 echo "   Pode rodar de novo no mesmo dia: ele continua de onde parou, sem repetir."
 echo
