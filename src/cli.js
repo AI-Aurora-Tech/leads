@@ -117,6 +117,13 @@ function promise({ p, phone }, intl) {
   return (phone.type === 'celular' ? 2 : 0) + (!p.website || socialHost(p.website) ? 1 : 0) + reviews;
 }
 
+/** [[a1,a2],[b1],[c1,c2]] → [a1,b1,c1,a2,c2] */
+function interleave(lists) {
+  const out = [];
+  for (let i = 0; out.length < lists.reduce((n, l) => n + l.length, 0); i++) for (const l of lists) if (i < l.length) out.push(l[i]);
+  return out;
+}
+
 /** Abre um arquivo ou endereço no navegador padrão (Mac, Windows ou Linux). */
 function openFile(file) {
   const abs = /^https?:/.test(file) ? file : resolve(file);
@@ -163,7 +170,13 @@ function buildPhases(cfg, { intlOnly = false, cidades } = {}) {
   if (values.termo) return places;
   return places.flatMap((place) => {
     const groups = nicheGroups(place.intl ? cfg.internacional : cfg.busca);
-    return groups.map((g, i) => ({ ...place, termos: g.nichos, titulo: `${place.titulo} · nichos ${i + 1}/${groups.length}: ${g.nome}` }));
+    const prio = groups.filter((g) => g.nome !== 'Outros nichos');
+    const outros = groups.find((g) => g.nome === 'Outros nichos');
+    // Primeiro os grupos prioritários mesclados (clínica, escola, salão, mercadinho, clínica…); depois o resto
+    return [
+      prio.length && { ...place, mix: prio.map((g) => g.nichos), titulo: `${place.titulo} · nichos prioritários mesclados: ${prio.map((g) => g.nome).join(', ')}` },
+      outros && { ...place, termos: outros.nichos, titulo: `${place.titulo} · outros nichos` },
+    ].filter(Boolean);
   });
 }
 
@@ -187,7 +200,7 @@ const [cmd, ...args] = positionals;
 
 const commands = {
   /** @returns true se parou por `done` (ainda há buscas a fazer), false se fez todas */
-  async buscar({ afterEach, done = () => false, intl = values.internacional, cidades: onlyCities, termos: onlyTerms, quiet = false, titulo } = {}) {
+  async buscar({ afterEach, done = () => false, intl = values.internacional, cidades: onlyCities, termos: onlyTerms, mix, quiet = false, titulo } = {}) {
     const fonte = values.fonte || config.busca.fonte;
     if (fonte === 'places' && !env.placesKey && !quiet) {
       console.log('Sem GOOGLE_PLACES_API_KEY no .env — usando --fonte maps (navegador).');
@@ -201,12 +214,14 @@ const commands = {
     // Internacional: nichos e cidades em inglês, busca em inglês, contato por e-mail
     const base = intl ? config.internacional : config.busca;
     const lang = intl ? 'en' : undefined;
-    const termos = todos(values.termo) ? onlyTerms || base.nichos : list(values.termo);
+    const termos = todos(values.termo) ? onlyTerms || mix?.flat() || base.nichos : list(values.termo);
     const cidades = values.cidade ? list(values.cidade) : onlyCities || base.cidades;
     const max = Number(values.max || (source === 'maps' ? base.maxPorBuscaNavegador : config.busca.maxPorBusca));
 
     // Ordem embaralhada (sempre a mesma) para trazer leads variados do Brasil todo desde o começo
-    const combos = shuffle(cidades.flatMap((cidade) => termos.map((termo) => ({ cidade, termo }))));
+    const combosOf = (ts) => shuffle(cidades.flatMap((cidade) => ts.map((termo) => ({ cidade, termo }))));
+    // mix: grupos de nichos intercalados (1 busca de cada grupo por vez), em vez de um grupo inteiro por vez
+    const combos = mix && todos(values.termo) ? interleave(mix.map(combosOf)) : combosOf(termos);
     const pending = values.refazer
       ? combos
       : combos.filter(({ cidade, termo }) => !searchDone(intl ? `${termo} in ${cidade}` : `${termo} em ${cidade}`));
@@ -393,7 +408,7 @@ const commands = {
       // Fases em ordem: só passa para a próxima quando todas as buscas da atual já foram feitas
       while (fase < phases.length && !done()) {
         const ph = phases[fase];
-        const stopped = await commands.buscar({ afterEach: refresh, done, intl: ph.intl, cidades: ph.cidades, termos: ph.termos, quiet: phases.length > 1, titulo: ph.titulo });
+        const stopped = await commands.buscar({ afterEach: refresh, done, intl: ph.intl, cidades: ph.cidades, termos: ph.termos, mix: ph.mix, quiet: phases.length > 1, titulo: ph.titulo });
         if (process.exitCode) process.exit(process.exitCode);
         if (!stopped) fase++;
       }
