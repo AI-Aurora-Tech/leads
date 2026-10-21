@@ -66,12 +66,14 @@ Para cada empresa encontrada aparece um ponto `.` e, depois de cada busca, o and
 2. **Empresas gringas:** EUA, Reino Unido, Canadá, Austrália, Irlanda e Nova Zelândia, contato por **e-mail** (veja o passo 6)
 3. **Demais estados do Brasil** (57 cidades, incluindo PR, SC e DF), contato por WhatsApp
 
-**Dentro de cada fase, os nichos seguem esta ordem** (também só passa para o próximo quando termina o anterior):
+**Dentro de cada fase, os nichos vêm mesclados:** o robô alterna uma busca de cada grupo prioritário, nesta ordem:
 1. Clínicas odontológicas e de estética
 2. Escolas (particulares, educação infantil, idiomas, música, técnicas…)
 3. Salões de beleza (manicure, pedicure, esmalteria, sobrancelha, cabeleireiro…)
 4. Mercadinhos (minimercados, mercearias, empórios, hortifrútis…)
-5. Todos os outros nichos
+
+…e volta para a clínica. Então cada rodada traz um pouco de cada. Os **outros nichos** só entram quando
+os quatro grupos acabarem na fase.
 
 Para mudar essa ordem ou os nichos de cada grupo, use `"busca": { "prioridadeNichos": [...] }` no `config.json`
 (o formato está no `config.example.json`).
